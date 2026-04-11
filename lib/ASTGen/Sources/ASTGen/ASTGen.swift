@@ -70,7 +70,10 @@ struct ASTGenVisitor {
     let parentDC = self.declContext
 
     func maybeTopLevelCodeDecl(body: () -> BridgedASTNode?) -> BridgedASTNode? {
-      let topLevelDecl: BridgedTopLevelCodeDecl = BridgedTopLevelCodeDecl.create(self.ctx, declContext: self.declContext)
+      let topLevelDecl: BridgedTopLevelCodeDecl = BridgedTopLevelCodeDecl.create(
+        self.ctx,
+        declContext: self.declContext
+      )
       guard let astNode = withDeclContext(topLevelDecl.asDeclContext, body) else {
         return nil
       }
@@ -368,7 +371,7 @@ extension ASTGenVisitor {
         return .init(start: loc, end: self.generateSourceLoc(endTok))
       }
     } else {
-      return .init(start:loc, end: loc)
+      return .init(start: loc, end: loc)
     }
   }
 
@@ -599,4 +602,33 @@ public func buildTopLevelASTNodes(
 
   // Diagnose any errors from evaluating #ifs.
   visitor.diagnoseAll(visitor.configuredRegions.diagnostics)
+}
+
+func stringToBuffer(
+  _ str: String,
+  outBufferPtr: UnsafeMutablePointer<UnsafePointer<CChar>?>,
+  outBufferLen: UnsafeMutablePointer<Int>
+) {
+  let buffer = UnsafeMutableRawPointer.allocate(byteCount: str.utf8.count, alignment: 8)
+  str.withCString({
+    buffer.copyMemory(from: $0, byteCount: str.utf8.count + 1)
+  })
+  outBufferPtr.initialize(to: UnsafeRawPointer(buffer).assumingMemoryBound(to: CChar.self))
+  outBufferLen.initialize(to: str.utf8.count)
+}
+
+@_cdecl("swift_ASTGen_expandEquatableMacro")
+public func expandEquatableMacro(
+  propertyNamesPtr: UnsafePointer<UnsafePointer<CChar>?>,
+  count: Int,
+  outBufferPtr: UnsafeMutablePointer<UnsafePointer<CChar>?>,
+  outBufferLen: UnsafeMutablePointer<Int>
+) -> Bool {
+  let names = (0..<count).compactMap {
+    propertyNamesPtr[$0].map { String(cString: $0) }
+  }
+  let syntax = expandEquatableMacroBody(propertyNames: names)
+  let text = syntax.description
+  stringToBuffer(text, outBufferPtr: outBufferPtr, outBufferLen: outBufferLen)
+  return true
 }

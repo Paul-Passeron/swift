@@ -71,4 +71,8 @@ public macro warning(_ message: String) = Builtin.WarningMacro
 @freestanding(declaration)
 public macro error(_ message: String) = Builtin.ErrorMacro
 
+  @attached(body)
+  public macro EquatableMacro(_ names: String...) =
+    #externalMacro(module: "SwiftMacros", type: "EquatableMacro")
+
 #endif // $Macros && hasAttribute(attached)
