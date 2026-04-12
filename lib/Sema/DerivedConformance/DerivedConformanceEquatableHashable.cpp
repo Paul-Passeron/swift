@@ -464,10 +464,9 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
 static FuncDecl *createEqDeclForTypeDecl(DerivedConformance &derived,
                                          TypeDecl *decl) {
   ASTContext &C = derived.Context;
-
   auto parentDC = derived.getConformanceContext();
   auto selfIfaceTy = parentDC->getSelfInterfaceType();
-  auto atLoc = decl->getStartLoc();
+  auto atLoc = derived.ConformanceDecl->getStartLoc();
 
   auto getParamDecl = [&](StringRef s) -> ParamDecl * {
     auto *param = new (C) ParamDecl(atLoc, atLoc, Identifier(), atLoc,
@@ -532,9 +531,8 @@ static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
                                             FuncDecl *eqDecl, TypeDecl *sd,
                                             StringRef name) {
 
-  auto atLoc = sd->getStartLoc();
-  assert(atLoc.isValid());
-  auto &C = eqDecl->getASTContext();
+  ASTContext &C = derived.Context;
+  auto atLoc = derived.ConformanceDecl->getStartLoc();
 
   auto declName = DeclName(C.getIdentifier(name));
   auto declNameRef = DeclNameRef(C, Identifier(), declName);
@@ -557,7 +555,6 @@ static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
   return attr;
 }
 
-
 ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   if (checkAndDiagnoseDisallowedContext(requirement))
     return nullptr;
@@ -568,9 +565,11 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   if (requirement->getBaseName() == "==") {
     CustomAttr *macroAttr;
     if (auto *ed = dyn_cast<EnumDecl>(Nominal)) {
-      macroAttr = createEquatableMacroAttr(*this, eqDecl, ed, "EquatableEnumMacro");
+      macroAttr =
+          createEquatableMacroAttr(*this, eqDecl, ed, "EquatableEnumMacro");
     } else if (auto *sd = dyn_cast<StructDecl>(Nominal)) {
-      macroAttr = createEquatableMacroAttr(*this, eqDecl, sd, "EquatableStructMacro");
+      macroAttr =
+          createEquatableMacroAttr(*this, eqDecl, sd, "EquatableStructMacro");
     } else {
       llvm_unreachable("todo");
     }

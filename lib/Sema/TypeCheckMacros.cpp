@@ -188,6 +188,12 @@ MacroDefinition MacroDefinitionRequest::evaluate(Evaluator &evaluator,
 
   case BridgedBuiltinIsolationMacro:
     return MacroDefinition::forBuiltin(BuiltinMacroKind::IsolationMacro);
+
+  case BridgedBuiltinEquatableEnumMacro:
+    return MacroDefinition::forBuiltin(BuiltinMacroKind::EquatableEnumMacro);
+
+  case BridgedBuiltinEquatableStructMacro:
+    return MacroDefinition::forBuiltin(BuiltinMacroKind::EquatableStructMacro);
   }
 
   // Type-check the macro expansion.
@@ -1178,6 +1184,11 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
           scratchSpace, adjustMacroExpansionBufferName(*discriminator));
       break;
     }
+    case BuiltinMacroKind::EquatableEnumMacro:
+    case BuiltinMacroKind::EquatableStructMacro: {
+      ctx.Diags.diagnose(loc, diag::macro_role_attr_expected_attached_kind);
+      return nullptr;
+    }
     }
     break;
   }
@@ -1292,6 +1303,8 @@ std::optional<unsigned> swift::expandMacroExpr(MacroExpansionExpr *mee) {
   case MacroDefinition::Kind::Builtin:
     switch (definition.getBuiltinKind()) {
     case BuiltinMacroKind::ExternalMacro:
+    case BuiltinMacroKind::EquatableEnumMacro:
+    case BuiltinMacroKind::EquatableStructMacro:
       break;
 
     case BuiltinMacroKind::IsolationMacro:
@@ -1299,6 +1312,8 @@ std::optional<unsigned> swift::expandMacroExpr(MacroExpansionExpr *mee) {
           macroBufferRange.getStart(), expandedType);
       break;
     }
+
+
   }
 
   if (!expandedExpr) {
@@ -1688,6 +1703,9 @@ evaluateAttachedMacro(MacroDecl *macro, Decl *attachedTo, CustomAttr *attr,
     switch (macroDef.getBuiltinKind()) {
     case BuiltinMacroKind::ExternalMacro:
     case BuiltinMacroKind::IsolationMacro:
+    // FIXME: These expansions should have been caught earlier, might wanna change that
+    case BuiltinMacroKind::EquatableEnumMacro:
+    case BuiltinMacroKind::EquatableStructMacro:
       // FIXME: Error here.
       return nullptr;
     }
@@ -1844,6 +1862,8 @@ static SourceFile *evaluateAttachedMacro(MacroDecl *macro,
     switch (macroDef.getBuiltinKind()) {
     case BuiltinMacroKind::ExternalMacro:
     case BuiltinMacroKind::IsolationMacro:
+    case BuiltinMacroKind::EquatableEnumMacro:
+    case BuiltinMacroKind::EquatableStructMacro:
       // FIXME: Error here.
       return nullptr;
     }

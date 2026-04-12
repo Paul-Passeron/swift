@@ -245,6 +245,12 @@ func checkMacroDefinition(
         case "IsolationMacro":
           return Int(BridgedMacroDefinitionKind.builtinIsolationMacro.rawValue)
 
+        case "EquatableStructMacro":
+          return Int(BridgedMacroDefinitionKind.builtinEquatableStructMacro.rawValue)
+
+        case "EquatableEnumMacro":
+          return Int(BridgedMacroDefinitionKind.builtinEquatableEnumMacro.rawValue)
+
         // These builtins don't exist, but are put into the standard library at
         // least for documentation purposes right now. Don't emit a warning for
         // them, but do fail operation.
@@ -337,8 +343,11 @@ func checkMacroDefinition(
         allocateBridgedString("\(module).\(type)")
       return Int(BridgedMacroDefinitionKind.externalMacro.rawValue)
 
-    case let .expansion(expansionSyntax,
-      replacements: replacements, genericReplacements: genericReplacements):
+    case let .expansion(
+      expansionSyntax,
+      replacements: replacements,
+      genericReplacements: genericReplacements
+    ):
       // Provide the expansion syntax.
       externalMacroOutPtr.pointee =
         allocateBridgedString(expansionSyntax.trimmedDescription)
@@ -717,7 +726,6 @@ func expandAttachedMacroImpl(
       """
     conformanceListSyntax = .init(syntax: Syntax(placeholderDecl))!
   }
-
 
   // Send the message.
   do {
