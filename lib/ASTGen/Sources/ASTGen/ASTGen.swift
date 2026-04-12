@@ -643,7 +643,7 @@ public func expandEquatableStructMacro(
 public struct EnumCaseInfo {
   let caseName: UnsafePointer<CChar>
   let argLabels: UnsafePointer<UnsafePointer<CChar>?>
-  let argCount: Int32
+  let argCount: Int
 }
 
 @_cdecl("swift_ASTGen_expandEquatableEnumMacro")
@@ -658,7 +658,7 @@ public func expandEquatableEnumMacro(
     let infos = caseInfos[idx]
     let labels: [String?] = (0..<Int(infos.argCount)).map { lblIdx in
       let lbl = infos.argLabels[lblIdx]
-      return lbl.map {String.init(cString:$0)}
+      return lbl.map { String.init(cString: $0) }
     }
     return (caseName: String(cString: infos.caseName), argLabels: labels)
   }

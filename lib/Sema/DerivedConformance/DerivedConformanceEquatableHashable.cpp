@@ -37,21 +37,22 @@
 using namespace swift;
 
 /// Common preconditions for Equatable and Hashable.
-static bool canDeriveConformance(DeclContext *DC,
-                                 NominalTypeDecl *target,
+static bool canDeriveConformance(DeclContext *DC, NominalTypeDecl *target,
                                  ProtocolDecl *protocol) {
   // The type must be an enum or a struct.
   if (auto enumDecl = dyn_cast<EnumDecl>(target)) {
     // The cases must not have associated values, or all associated values must
     // conform to the protocol.
-    return DerivedConformance::allAssociatedValuesConformToProtocol(DC, enumDecl, protocol);
+    return DerivedConformance::allAssociatedValuesConformToProtocol(
+        DC, enumDecl, protocol);
   }
 
   if (auto structDecl = dyn_cast<StructDecl>(target)) {
     // All stored properties of the struct must conform to the protocol. If
     // there are no stored properties, we will vaccously return true.
     if (!DerivedConformance::storedPropertiesNotConformingToProtocol(
-               DC, structDecl, protocol).empty())
+             DC, structDecl, protocol)
+             .empty())
       return false;
 
     return true;
@@ -81,19 +82,21 @@ deriveBodyEquatable_enum_uninhabited_eq(AbstractFunctionDecl *eqDecl, void *) {
   auto aParam = args->get(0);
   auto bParam = args->get(1);
 
-  assert(!cast<EnumDecl>(aParam->getInterfaceType()->getAnyNominal())->hasCases());
+  assert(
+      !cast<EnumDecl>(aParam->getInterfaceType()->getAnyNominal())->hasCases());
 
   SmallVector<ASTNode, 1> statements;
   SmallVector<CaseStmt *, 0> cases;
 
   // switch (a, b) { }
-  auto aRef = new (C) DeclRefExpr(aParam, DeclNameLoc(), /*implicit*/ true,
-                                  AccessSemantics::Ordinary,
-                                  aParam->getTypeInContext());
-  auto bRef = new (C) DeclRefExpr(bParam, DeclNameLoc(), /*implicit*/ true,
-                                  AccessSemantics::Ordinary,
-                                  bParam->getTypeInContext());
-  TupleTypeElt abTupleElts[2] = { aParam->getTypeInContext(), bParam->getTypeInContext() };
+  auto aRef = new (C)
+      DeclRefExpr(aParam, DeclNameLoc(), /*implicit*/ true,
+                  AccessSemantics::Ordinary, aParam->getTypeInContext());
+  auto bRef = new (C)
+      DeclRefExpr(bParam, DeclNameLoc(), /*implicit*/ true,
+                  AccessSemantics::Ordinary, bParam->getTypeInContext());
+  TupleTypeElt abTupleElts[2] = {aParam->getTypeInContext(),
+                                 bParam->getTypeInContext()};
   auto abExpr = TupleExpr::createImplicit(C, {aRef, bRef}, /*labels*/ {});
   abExpr->setType(TupleType::get(abTupleElts, C));
   auto switchStmt =
@@ -101,7 +104,7 @@ deriveBodyEquatable_enum_uninhabited_eq(AbstractFunctionDecl *eqDecl, void *) {
   statements.push_back(switchStmt);
 
   auto body = BraceStmt::create(C, SourceLoc(), statements, SourceLoc());
-  return { body, /*isTypeChecked=*/true };
+  return {body, /*isTypeChecked=*/true};
 }
 
 /// Derive the body for an '==' operator for an enum that has no associated
@@ -121,10 +124,10 @@ deriveBodyEquatable_enum_noAssociatedValues_eq(AbstractFunctionDecl *eqDecl,
 
   // Generate the conversion from the enums to integer indices.
   SmallVector<ASTNode, 6> statements;
-  DeclRefExpr *aIndex = DerivedConformance::convertEnumToIndex(statements, parentDC, enumDecl,
-                                           aParam, eqDecl, "index_a");
-  DeclRefExpr *bIndex = DerivedConformance::convertEnumToIndex(statements, parentDC, enumDecl,
-                                           bParam, eqDecl, "index_b");
+  DeclRefExpr *aIndex = DerivedConformance::convertEnumToIndex(
+      statements, parentDC, enumDecl, aParam, eqDecl, "index_a");
+  DeclRefExpr *bIndex = DerivedConformance::convertEnumToIndex(
+      statements, parentDC, enumDecl, bParam, eqDecl, "index_b");
 
   // Generate the compare of the indices.
   FuncDecl *cmpFunc = C.getEqualIntDecl();
@@ -146,10 +149,9 @@ deriveBodyEquatable_enum_noAssociatedValues_eq(AbstractFunctionDecl *eqDecl,
     callExpr->setThrows(nullptr);
     cmpFuncExpr = callExpr;
   } else {
-    cmpFuncExpr = new (C) DeclRefExpr(cmpFunc, DeclNameLoc(),
-                                      /*implicit*/ true,
-                                      AccessSemantics::Ordinary,
-                                      fnType);
+    cmpFuncExpr = new (C)
+        DeclRefExpr(cmpFunc, DeclNameLoc(),
+                    /*implicit*/ true, AccessSemantics::Ordinary, fnType);
   }
 
   auto *cmpExpr =
@@ -159,7 +161,7 @@ deriveBodyEquatable_enum_noAssociatedValues_eq(AbstractFunctionDecl *eqDecl,
   statements.push_back(ReturnStmt::createImplicit(C, cmpExpr));
 
   BraceStmt *body = BraceStmt::create(C, SourceLoc(), statements, SourceLoc());
-  return { body, /*isTypeChecked=*/true };
+  return {body, /*isTypeChecked=*/true};
 }
 
 /// Derive the body for an '==' operator for an enum where at least one of the
@@ -195,22 +197,22 @@ deriveBodyEquatable_enum_hasAssociatedValues_eq(AbstractFunctionDecl *eqDecl,
     }
 
     // .<elt>(let l0, let l1, ...)
-    SmallVector<VarDecl*, 3> lhsPayloadVars;
+    SmallVector<VarDecl *, 3> lhsPayloadVars;
     auto *lhsSubpattern = DerivedConformance::enumElementPayloadSubpattern(
         elt, 'l', eqDecl, lhsPayloadVars);
     auto *lhsElemPat = EnumElementPattern::createImplicit(
         enumType, elt, lhsSubpattern, /*DC*/ eqDecl);
 
     // .<elt>(let r0, let r1, ...)
-    SmallVector<VarDecl*, 3> rhsPayloadVars;
+    SmallVector<VarDecl *, 3> rhsPayloadVars;
     auto *rhsSubpattern = DerivedConformance::enumElementPayloadSubpattern(
         elt, 'r', eqDecl, rhsPayloadVars);
     auto *rhsElemPat = EnumElementPattern::createImplicit(
         enumType, elt, rhsSubpattern, /*DC*/ eqDecl);
 
     // case (.<elt>(let l0, let l1, ...), .<elt>(let r0, let r1, ...))
-    auto caseTuplePattern = TuplePattern::createImplicit(C, {
-      TuplePatternElt(lhsElemPat), TuplePatternElt(rhsElemPat) });
+    auto caseTuplePattern = TuplePattern::createImplicit(
+        C, {TuplePatternElt(lhsElemPat), TuplePatternElt(rhsElemPat)});
     caseTuplePattern->setImplicit();
 
     auto labelItem = CaseLabelItem(caseTuplePattern);
@@ -223,12 +225,12 @@ deriveBodyEquatable_enum_hasAssociatedValues_eq(AbstractFunctionDecl *eqDecl,
     for (size_t varIdx = 0; varIdx < lhsPayloadVars.size(); ++varIdx) {
       auto lhsVar = lhsPayloadVars[varIdx];
       auto lhsExpr = new (C) DeclRefExpr(lhsVar, DeclNameLoc(),
-                                         /*implicit*/true);
+                                         /*implicit*/ true);
       auto rhsVar = rhsPayloadVars[varIdx];
       auto rhsExpr = new (C) DeclRefExpr(rhsVar, DeclNameLoc(),
-                                         /*Implicit*/true);
-      auto guardStmt = DerivedConformance::returnFalseIfNotEqualGuard(C,
-          lhsExpr, rhsExpr);
+                                         /*Implicit*/ true);
+      auto guardStmt =
+          DerivedConformance::returnFalseIfNotEqualGuard(C, lhsExpr, rhsExpr);
       statementsInCase.emplace_back(guardStmt);
     }
 
@@ -236,12 +238,12 @@ deriveBodyEquatable_enum_hasAssociatedValues_eq(AbstractFunctionDecl *eqDecl,
     // were true.
     // return true
     auto trueExpr = new (C) BooleanLiteralExpr(true, SourceLoc(),
-                                               /*Implicit*/true);
+                                               /*Implicit*/ true);
     auto *returnStmt = ReturnStmt::createImplicit(C, trueExpr);
     statementsInCase.push_back(returnStmt);
 
-    auto body = BraceStmt::create(C, SourceLoc(), statementsInCase,
-                                  SourceLoc());
+    auto body =
+        BraceStmt::create(C, SourceLoc(), statementsInCase, SourceLoc());
     cases.push_back(
         CaseStmt::createImplicit(C, CaseParentKind::Switch, labelItem, body));
   }
@@ -256,22 +258,22 @@ deriveBodyEquatable_enum_hasAssociatedValues_eq(AbstractFunctionDecl *eqDecl,
     auto falseExpr = new (C) BooleanLiteralExpr(false, SourceLoc(),
                                                 /*implicit*/ true);
     auto *returnStmt = ReturnStmt::createImplicit(C, falseExpr);
-    auto body = BraceStmt::create(C, SourceLoc(), ASTNode(returnStmt),
-                                  SourceLoc());
+    auto body =
+        BraceStmt::create(C, SourceLoc(), ASTNode(returnStmt), SourceLoc());
     cases.push_back(
         CaseStmt::createImplicit(C, CaseParentKind::Switch, defaultItem, body));
   }
 
   // switch (a, b) { <case statements> }
-  auto aRef = new (C) DeclRefExpr(aParam, DeclNameLoc(), /*implicit*/true);
-  auto bRef = new (C) DeclRefExpr(bParam, DeclNameLoc(), /*implicit*/true);
+  auto aRef = new (C) DeclRefExpr(aParam, DeclNameLoc(), /*implicit*/ true);
+  auto bRef = new (C) DeclRefExpr(bParam, DeclNameLoc(), /*implicit*/ true);
   auto abExpr = TupleExpr::createImplicit(C, {aRef, bRef}, /*labels*/ {});
   auto switchStmt =
       SwitchStmt::createImplicit(LabeledStmtInfo(), abExpr, cases, C);
   statements.push_back(switchStmt);
 
   auto body = BraceStmt::create(C, SourceLoc(), statements, SourceLoc());
-  return { body, /*isTypeChecked=*/false };
+  return {body, /*isTypeChecked=*/false};
 }
 
 /// Derive the body for an '==' operator for a struct.
@@ -284,7 +286,8 @@ deriveBodyEquatable_struct_eq(AbstractFunctionDecl *eqDecl, void *) {
   auto aParam = args->get(0);
   auto bParam = args->get(1);
 
-  auto structDecl = cast<StructDecl>(aParam->getInterfaceType()->getAnyNominal());
+  auto structDecl =
+      cast<StructDecl>(aParam->getInterfaceType()->getAnyNominal());
 
   SmallVector<ASTNode, 6> statements;
 
@@ -298,18 +301,18 @@ deriveBodyEquatable_struct_eq(AbstractFunctionDecl *eqDecl, void *) {
 
     auto aParamRef = new (C) DeclRefExpr(aParam, DeclNameLoc(),
                                          /*implicit*/ true);
-    auto aPropertyExpr = new (C) MemberRefExpr(aParamRef, SourceLoc(),
-                                               propertyDecl, DeclNameLoc(),
-                                               /*implicit*/ true);
+    auto aPropertyExpr = new (C)
+        MemberRefExpr(aParamRef, SourceLoc(), propertyDecl, DeclNameLoc(),
+                      /*implicit*/ true);
 
     auto bParamRef = new (C) DeclRefExpr(bParam, DeclNameLoc(),
                                          /*implicit*/ true);
-    auto bPropertyExpr = new (C) MemberRefExpr(bParamRef, SourceLoc(),
-                                               propertyDecl, DeclNameLoc(),
-                                               /*implicit*/ true);
+    auto bPropertyExpr = new (C)
+        MemberRefExpr(bParamRef, SourceLoc(), propertyDecl, DeclNameLoc(),
+                      /*implicit*/ true);
 
-    auto guardStmt = DerivedConformance::returnFalseIfNotEqualGuard(C,
-      aPropertyExpr, bPropertyExpr);
+    auto guardStmt = DerivedConformance::returnFalseIfNotEqualGuard(
+        C, aPropertyExpr, bPropertyExpr);
     statements.emplace_back(guardStmt);
   }
 
@@ -322,7 +325,7 @@ deriveBodyEquatable_struct_eq(AbstractFunctionDecl *eqDecl, void *) {
   statements.push_back(returnStmt);
 
   auto body = BraceStmt::create(C, SourceLoc(), statements, SourceLoc());
-  return { body, /*isTypeChecked=*/false };
+  return {body, /*isTypeChecked=*/false};
 }
 
 /// Derive an '==' operator implementation for an enum or a struct.
@@ -525,35 +528,15 @@ static FuncDecl *createEqDeclForTypeDecl(DerivedConformance &derived,
   return eqDecl;
 }
 
-static void finalizeEqDecl(DerivedConformance &derived, FuncDecl *eqDecl) {
-  eqDecl->copyFormalAccessFrom(derived.Nominal,
-                               /*sourceIsParentContext*/ true);
-  // Add the operator to the parent scope.
-  derived.addMembersToConformanceContext({eqDecl});
-}
-
-static void handleEnumNoCases(DerivedConformance &derived, FuncDecl *eqDecl,
-                              EnumDecl *ed) {
-  llvm_unreachable("todo");
-}
-
-void handleEnumNoAssociatedValues(DerivedConformance &derived, FuncDecl *eqDecl,
-                                  EnumDecl *ed) {
-  llvm_unreachable("todo");
-}
-
-void handleEnum(DerivedConformance &derived, FuncDecl *eqDecl, EnumDecl *ed) {
-  llvm_unreachable("todo");
-}
-
-static CustomAttr *createEquatableStructMacroAttr(DerivedConformance &derived,
-                                            FuncDecl *eqDecl, StructDecl *sd) {
+static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
+                                            FuncDecl *eqDecl, TypeDecl *sd,
+                                            StringRef name) {
 
   auto atLoc = sd->getStartLoc();
   assert(atLoc.isValid());
   auto &C = eqDecl->getASTContext();
 
-  auto declName = DeclName(C.getIdentifier("EquatableStructMacro"));
+  auto declName = DeclName(C.getIdentifier(name));
   auto declNameRef = DeclNameRef(C, Identifier(), declName);
 
   auto typeRepr =
@@ -564,8 +547,8 @@ static CustomAttr *createEquatableStructMacroAttr(DerivedConformance &derived,
   // Note: We have to use this cnstructor to have locs on the parenthesis
   // otherwise an empty arg list will cause a crash during the expansion
   // of the macro
-  auto argList =
-      ArgumentList::create(C, atLoc, ArrayRef<Argument>(), atLoc, std::nullopt, /*isImplicit=*/ true);
+  auto argList = ArgumentList::create(C, atLoc, ArrayRef<Argument>(), atLoc,
+                                      std::nullopt, /*isImplicit=*/true);
 
   auto *attr = CustomAttr::create(
       C, atLoc, typeExpr, CustomAttrOwner(static_cast<Decl *>(eqDecl)),
@@ -574,11 +557,6 @@ static CustomAttr *createEquatableStructMacroAttr(DerivedConformance &derived,
   return attr;
 }
 
-static void handleStruct(DerivedConformance &derived, FuncDecl *eqDecl,
-                         StructDecl *sd) {
-  auto *macroAttr = createEquatableStructMacroAttr(derived, eqDecl, sd);
-  eqDecl->addAttribute(macroAttr);
-}
 
 ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   if (checkAndDiagnoseDisallowedContext(requirement))
@@ -588,20 +566,19 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
 
   // Build the necessary decl.
   if (requirement->getBaseName() == "==") {
-    if (auto ed = dyn_cast<EnumDecl>(Nominal)) {
-      if (!ed->hasCases()) {
-        handleEnumNoCases(*this, eqDecl, ed);
-      } else if (ed->hasOnlyCasesWithoutAssociatedValues()) {
-        handleEnumNoAssociatedValues(*this, eqDecl, ed);
-      } else {
-        handleEnum(*this, eqDecl, ed);
-      }
-    } else if (auto sd = dyn_cast<StructDecl>(Nominal)) {
-      handleStruct(*this, eqDecl, sd);
+    CustomAttr *macroAttr;
+    if (auto *ed = dyn_cast<EnumDecl>(Nominal)) {
+      macroAttr = createEquatableMacroAttr(*this, eqDecl, ed, "EquatableEnumMacro");
+    } else if (auto *sd = dyn_cast<StructDecl>(Nominal)) {
+      macroAttr = createEquatableMacroAttr(*this, eqDecl, sd, "EquatableStructMacro");
     } else {
       llvm_unreachable("todo");
     }
-    finalizeEqDecl(*this, eqDecl);
+    eqDecl->addAttribute(macroAttr);
+    eqDecl->copyFormalAccessFrom(this->Nominal,
+                                 /*sourceIsParentContext*/ true);
+    // Add the operator to the parent scope.
+    this->addMembersToConformanceContext({eqDecl});
     return eqDecl;
   }
   requirement->diagnose(diag::broken_equatable_requirement);

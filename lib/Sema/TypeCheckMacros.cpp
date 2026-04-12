@@ -52,7 +52,10 @@
 #include "swift/Sema/IDETypeChecking.h"
 #include "swift/Subsystems.h"
 #include "llvm/Config/config.h"
+#include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorHandling.h"
+
+#include <cstdlib>
 
 #define DEBUG_TYPE "macros"
 
@@ -1391,10 +1394,10 @@ static SourceFile *
 getSourceFileForAstGenMacro(ASTContext &ctx, AbstractFunctionDecl *fn,
                             MacroDecl *macro, CustomAttr *attr,
                             const char *outBuffer, size_t outLen) {
-  auto bufferID = ctx.SourceMgr.addMemBufferCopy(
-      StringRef(outBuffer, outLen), "__ast_gen_macro_expansion__");
+  auto bufferID = ctx.SourceMgr.addMemBufferCopy(StringRef(outBuffer, outLen),
+                                                 "__ast_gen_macro_expansion__");
 
-  auto *sd = fn->getDeclContext()->getSelfStructDecl();
+  auto *sd = fn->getDeclContext()->getSelfNominalTypeDecl();
   GeneratedSourceInfo sourceInfo;
   auto startLoc = sd->getStartLoc();
   sourceInfo.originalSourceRange =
@@ -1415,18 +1418,9 @@ getSourceFileForAstGenMacro(ASTContext &ctx, AbstractFunctionDecl *fn,
 }
 
 static SourceFile *evaluateEquatableStructMacro(ASTContext &ctx,
-                                          AbstractFunctionDecl *fn,
-                                          MacroDecl *macro, CustomAttr *attr) {
-  // auto *args = attr->getArgs();
-  // SmallVector<const char *, 6> fieldNames;
-  // if (args) {
-  //   for (auto arg : *args) {
-  //     if (auto *lit = dyn_cast<StringLiteralExpr>(arg.getExpr())) {
-  //       fieldNames.push_back(strdup(lit->getValue().str().c_str()));
-  //     }
-  //   }
-  // }
-
+                                                AbstractFunctionDecl *fn,
+                                                MacroDecl *macro,
+                                                CustomAttr *attr) {
   auto *parent = fn->getParent();
   assert(parent && "Should have a parent context");
 
@@ -1451,10 +1445,89 @@ static SourceFile *evaluateEquatableStructMacro(ASTContext &ctx,
   size_t outLen;
   const char *const *propertyNames = fieldNames.data();
   if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
-                                         &outBuffer, &outLen)) {
+                                               &outBuffer, &outLen)) {
     return nullptr;
   }
   return getSourceFileForAstGenMacro(ctx, fn, macro, attr, outBuffer, outLen);
+}
+
+// Matches the following C/C++ struct:
+// public struct EnumCaseInfo {
+//   let caseName: UnsafePointer<CChar>
+//   let argLabels: UnsafePointer<UnsafePointer<CChar>?>
+//   let argCount: Int
+// }
+
+struct EnumCaseInfo {
+  const char *caseName;
+  const char *const *argLabels;
+  size_t argCount;
+};
+
+static const char *cloneString(llvm::BumpPtrAllocator &allocator,
+                               StringRef str) {
+  auto len = str.size() + 1;
+  auto *buf = allocator.Allocate<char>(len);
+  memcpy(buf, str.data(), len);
+  return buf;
+}
+
+static SourceFile *evaluateEquatableEnumMacro(ASTContext &ctx,
+                                              AbstractFunctionDecl *fn,
+                                              MacroDecl *macro,
+                                              CustomAttr *attr) {
+  auto *parent = fn->getParent();
+  assert(parent && "Should have a parent context");
+
+  auto *enum_decl = parent->getSelfEnumDecl();
+  assert(parent && "Self should be a enum type");
+
+  llvm::BumpPtrAllocator alloc; // Bump allocator for strings
+  SmallVector<EnumCaseInfo, 6> cases;
+
+  for (const auto *the_case : enum_decl->getAllCases()) {
+    // TODO: Handle unavailable cases
+    for (const auto *elt : the_case->getElements()) {
+      SmallVector<const char *, 6> *argLabels =
+          new (alloc) SmallVector<const char *, 6>();
+      const char *name =
+          cloneString(alloc, elt->getBaseIdentifier().str().data());
+      if (elt->hasAssociatedValues()) {
+        auto payloadType = elt->getPayloadInterfaceType();
+        if (auto tupleType = payloadType->getAs<TupleType>()) {
+          for (auto tupleElement : tupleType->getElements()) {
+            if (tupleElement.hasName()) {
+              argLabels->emplace_back(
+                  cloneString(alloc, tupleElement.getName().str().data()));
+            } else {
+              argLabels->emplace_back(nullptr);
+            }
+          }
+        } else {
+          // TODO: is this right ?
+          argLabels->emplace_back(nullptr);
+        }
+      }
+      cases.emplace_back((EnumCaseInfo){.caseName = name,
+                                        .argLabels = argLabels->data(),
+                                        .argCount = argLabels->size()});
+    }
+  }
+
+  char *outBuffer;
+  size_t outLen;
+  if (!swift_ASTGen_expandEquatableEnumMacro(cases.data(), cases.size(),
+                                             &outBuffer, &outLen)) {
+    return nullptr;
+  }
+  auto *SF =
+      getSourceFileForAstGenMacro(ctx, fn, macro, attr, outBuffer, outLen);
+
+  // TODO: Do we want to do this ?
+  if (outBuffer) {
+    std::free(outBuffer);
+  }
+  return SF;
 }
 
 static SourceFile *evaluateASTGenMacro(ASTContext &ctx, MacroDecl *macro,
@@ -1462,6 +1535,9 @@ static SourceFile *evaluateASTGenMacro(ASTContext &ctx, MacroDecl *macro,
                                        CustomAttr *attr) {
   if (macro->getBaseName() == "EquatableStructMacro") {
     return evaluateEquatableStructMacro(ctx, fn, macro, attr);
+  }
+  if (macro->getBaseName() == "EquatableEnumMacro") {
+    return evaluateEquatableEnumMacro(ctx, fn, macro, attr);
   }
   return nullptr;
 }

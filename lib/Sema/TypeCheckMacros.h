@@ -104,7 +104,7 @@ extern "C" bool swift_ASTGen_expandEquatableStructMacro(
 extern "C" bool swift_ASTGen_expandEquatableEnumMacro(
   void *caseInfos,
   size_t caseCount,
-  const char **outBufferPtr,
+  char **outBufferPtr,
   size_t *outBufferLen
 );
 
