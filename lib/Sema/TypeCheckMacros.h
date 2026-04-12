@@ -94,12 +94,20 @@ bool accessorMacroIntroducesInitAccessor(
 bool isInvalidAttachedMacro(MacroRole role,
                             Decl *attachedTo);
 
-extern "C" bool swift_ASTGen_expandEquatableMacro(
+extern "C" bool swift_ASTGen_expandEquatableStructMacro(
     const char * const *propertyNames,
     size_t count,
     const char **outBuffer,
     size_t *outLen);
+
+
+extern "C" bool swift_ASTGen_expandEquatableEnumMacro(
+  void *caseInfos,
+  size_t caseCount,
+  const char **outBufferPtr,
+  size_t *outBufferLen
+);
+
 } // end namespace swift
 
 #endif /* SWIFT_SEMA_TYPECHECKMACROS_H */
-

@@ -18,6 +18,7 @@
 #include "CodeSynthesis.h"
 #include "DerivedConformance.h"
 #include "TypeChecker.h"
+#include "swift/AST/ArgumentList.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/Expr.h"
 #include "swift/AST/Module.h"
@@ -58,6 +59,18 @@ static bool canDeriveConformance(DeclContext *DC,
 
   return false;
 }
+
+bool DerivedConformance::canDeriveEquatable(DeclContext *DC,
+                                            NominalTypeDecl *type) {
+  ASTContext &ctx = DC->getASTContext();
+  auto equatableProto = ctx.getProtocol(KnownProtocolKind::Equatable);
+  if (!equatableProto)
+    return false;
+  return canDeriveConformance(DC, type, equatableProto);
+}
+
+#define USE_MACROS
+#ifndef USE_MACROS
 
 static std::pair<BraceStmt *, bool>
 deriveBodyEquatable_enum_uninhabited_eq(AbstractFunctionDecl *eqDecl, void *) {
@@ -214,7 +227,7 @@ deriveBodyEquatable_enum_hasAssociatedValues_eq(AbstractFunctionDecl *eqDecl,
       auto rhsVar = rhsPayloadVars[varIdx];
       auto rhsExpr = new (C) DeclRefExpr(rhsVar, DeclNameLoc(),
                                          /*Implicit*/true);
-      auto guardStmt = DerivedConformance::returnFalseIfNotEqualGuard(C, 
+      auto guardStmt = DerivedConformance::returnFalseIfNotEqualGuard(C,
           lhsExpr, rhsExpr);
       statementsInCase.emplace_back(guardStmt);
     }
@@ -423,18 +436,6 @@ static ValueDecl *deriveEquatable_eq(
   return eqDecl;
 }
 
-bool DerivedConformance::canDeriveEquatable(DeclContext *DC,
-                                            NominalTypeDecl *type) {
-  ASTContext &ctx = DC->getASTContext();
-  auto equatableProto = ctx.getProtocol(KnownProtocolKind::Equatable);
-  if (!equatableProto)
-    return false;
-  return canDeriveConformance(DC, type, equatableProto);
-}
-
-#define USE_MACROS
-#ifndef USE_MACROS
-
 ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   if (checkAndDiagnoseDisallowedContext(requirement))
     return nullptr;
@@ -545,14 +546,14 @@ void handleEnum(DerivedConformance &derived, FuncDecl *eqDecl, EnumDecl *ed) {
   llvm_unreachable("todo");
 }
 
-static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
+static CustomAttr *createEquatableStructMacroAttr(DerivedConformance &derived,
                                             FuncDecl *eqDecl, StructDecl *sd) {
 
   auto atLoc = sd->getStartLoc();
   assert(atLoc.isValid());
   auto &C = eqDecl->getASTContext();
 
-  auto declName = DeclName(C.getIdentifier("EquatableMacro"));
+  auto declName = DeclName(C.getIdentifier("EquatableStructMacro"));
   auto declNameRef = DeclNameRef(C, Identifier(), declName);
 
   auto typeRepr =
@@ -560,18 +561,11 @@ static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
 
   auto *typeExpr = new (C) TypeExpr(typeRepr);
 
-  SmallVector<Argument, 6> args;
-  for (const auto *storedProperty : sd->getStoredProperties()) {
-    auto *str = new (C)
-        StringLiteralExpr(storedProperty->getName().str(), SourceRange(), true);
-    args.emplace_back(atLoc, Identifier(), str);
-  }
-
   // Note: We have to use this cnstructor to have locs on the parenthesis
   // otherwise an empty arg list will cause a crash during the expansion
   // of the macro
   auto argList =
-      ArgumentList::create(C, atLoc, args, atLoc, std::nullopt, true);
+      ArgumentList::create(C, atLoc, ArrayRef<Argument>(), atLoc, std::nullopt, /*isImplicit=*/ true);
 
   auto *attr = CustomAttr::create(
       C, atLoc, typeExpr, CustomAttrOwner(static_cast<Decl *>(eqDecl)),
@@ -582,7 +576,7 @@ static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
 
 static void handleStruct(DerivedConformance &derived, FuncDecl *eqDecl,
                          StructDecl *sd) {
-  auto *macroAttr = createEquatableMacroAttr(derived, eqDecl, sd);
+  auto *macroAttr = createEquatableStructMacroAttr(derived, eqDecl, sd);
   eqDecl->addAttribute(macroAttr);
 }
 
@@ -614,6 +608,7 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   return nullptr;
 }
 #endif // USE_MACROS
+
 void DerivedConformance::tryDiagnoseFailedEquatableDerivation(
     DeclContext *DC, NominalTypeDecl *nominal) {
   ASTContext &ctx = DC->getASTContext();

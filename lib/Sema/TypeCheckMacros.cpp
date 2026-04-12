@@ -1378,7 +1378,10 @@ swift::expandFreestandingMacro(MacroExpansionDecl *med) {
 
 static bool isAstGenMacro(MacroDecl *macro) {
   // TODO: Have an actual solution rather than this atrocity
-  if (macro->getBaseName() == "EquatableMacro") {
+  if (macro->getBaseName() == "EquatableStructMacro") {
+    return true;
+  }
+  if (macro->getBaseName() == "EquatableEnumMacro") {
     return true;
   }
   return false;
@@ -1389,7 +1392,7 @@ getSourceFileForAstGenMacro(ASTContext &ctx, AbstractFunctionDecl *fn,
                             MacroDecl *macro, CustomAttr *attr,
                             const char *outBuffer, size_t outLen) {
   auto bufferID = ctx.SourceMgr.addMemBufferCopy(
-      StringRef(outBuffer, outLen), "__equatable_macro_expansion__");
+      StringRef(outBuffer, outLen), "__ast_gen_macro_expansion__");
 
   auto *sd = fn->getDeclContext()->getSelfStructDecl();
   GeneratedSourceInfo sourceInfo;
@@ -1411,17 +1414,31 @@ getSourceFileForAstGenMacro(ASTContext &ctx, AbstractFunctionDecl *fn,
   return SF;
 }
 
-static SourceFile *evaluateEquatableMacro(ASTContext &ctx,
+static SourceFile *evaluateEquatableStructMacro(ASTContext &ctx,
                                           AbstractFunctionDecl *fn,
                                           MacroDecl *macro, CustomAttr *attr) {
-  auto *args = attr->getArgs();
+  // auto *args = attr->getArgs();
+  // SmallVector<const char *, 6> fieldNames;
+  // if (args) {
+  //   for (auto arg : *args) {
+  //     if (auto *lit = dyn_cast<StringLiteralExpr>(arg.getExpr())) {
+  //       fieldNames.push_back(strdup(lit->getValue().str().c_str()));
+  //     }
+  //   }
+  // }
+
+  auto *parent = fn->getParent();
+  assert(parent && "Should have a parent context");
+
+  auto *struct_decl = parent->getSelfStructDecl();
+  assert(parent && "Self should be a struct type");
+
   SmallVector<const char *, 6> fieldNames;
-  if (args) {
-    for (auto arg : *args) {
-      if (auto *lit = dyn_cast<StringLiteralExpr>(arg.getExpr())) {
-        fieldNames.push_back(strdup(lit->getValue().str().c_str()));
-      }
-    }
+
+  for (auto propertyDecl : struct_decl->getStoredProperties()) {
+    if (!propertyDecl->isUserAccessible())
+      continue;
+    fieldNames.emplace_back(strdup(propertyDecl->getNameStr().str().c_str()));
   }
 
   auto cleanup = llvm::make_scope_exit([&] {
@@ -1433,7 +1450,7 @@ static SourceFile *evaluateEquatableMacro(ASTContext &ctx,
   const char *outBuffer;
   size_t outLen;
   const char *const *propertyNames = fieldNames.data();
-  if (!swift_ASTGen_expandEquatableMacro(propertyNames, fieldNames.size(),
+  if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
                                          &outBuffer, &outLen)) {
     return nullptr;
   }
@@ -1443,8 +1460,8 @@ static SourceFile *evaluateEquatableMacro(ASTContext &ctx,
 static SourceFile *evaluateASTGenMacro(ASTContext &ctx, MacroDecl *macro,
                                        AbstractFunctionDecl *fn,
                                        CustomAttr *attr) {
-  if (macro->getBaseName() == "EquatableMacro") {
-    return evaluateEquatableMacro(ctx, fn, macro, attr);
+  if (macro->getBaseName() == "EquatableStructMacro") {
+    return evaluateEquatableStructMacro(ctx, fn, macro, attr);
   }
   return nullptr;
 }
