@@ -523,6 +523,11 @@ static FuncDecl *createEqDeclForTypeDecl(DerivedConformance &derived,
 
   addNonIsolatedToSynthesized(derived, eqDecl);
 
+  // This is so that SILGen does not "forget" to expand the body
+  auto *emptyBody = BraceStmt::create(C, SourceLoc(), {}, SourceLoc(),
+                                      /*Implicit=*/true);
+  eqDecl->setBody(emptyBody, AbstractFunctionDecl::BodyKind::Parsed);
+
   return eqDecl;
 }
 
