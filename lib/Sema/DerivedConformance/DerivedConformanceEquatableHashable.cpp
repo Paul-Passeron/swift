@@ -17,6 +17,7 @@
 
 #include "CodeSynthesis.h"
 #include "DerivedConformance.h"
+#include "DerivedConformanceMacros.h"
 #include "TypeChecker.h"
 #include "swift/AST/ArgumentList.h"
 #include "swift/AST/Decl.h"
@@ -28,10 +29,9 @@
 #include "swift/AST/Stmt.h"
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
-#include "llvm/ADT/APInt.h"
-#include "llvm/ADT/SmallString.h"
+#include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/raw_ostream.h"
+#include <cstdlib>
 #include <optional>
 
 using namespace swift;
@@ -70,7 +70,7 @@ bool DerivedConformance::canDeriveEquatable(DeclContext *DC,
   return canDeriveConformance(DC, type, equatableProto);
 }
 
-#ifndef USE_MACROS
+#ifdef DO_NOT_USE_MACROS
 
 static std::pair<BraceStmt *, bool>
 deriveBodyEquatable_enum_uninhabited_eq(AbstractFunctionDecl *eqDecl, void *) {
@@ -1103,12 +1103,13 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
           bodySynthesizer =
               deriveBodyHashable_enum_hasAssociatedValues_hashInto;
         return deriveHashable_hashInto(*this, bodySynthesizer);
-      } else if (isa<StructDecl>(Nominal))
+      }
+      if (isa<StructDecl>(Nominal))
         return deriveHashable_hashInto(*this,
                                        &deriveBodyHashable_struct_hashInto);
-      else // This should've been caught by canDeriveHashable above.
-        llvm_unreachable("Attempt to derive Hashable for a type other "
-                         "than a struct or enum");
+      // This should've been caught by canDeriveHashable above.
+      llvm_unreachable("Attempt to derive Hashable for a type other "
+                       "than a struct or enum");
     } else {
       // hashValue has an explicit implementation, but hash(into:) doesn't.
       // Emit a deprecation warning, then derive hash(into:) in terms of
@@ -1122,4 +1123,40 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
 
   requirement->diagnose(diag::broken_hashable_requirement);
   return nullptr;
+}
+
+SourceFile *swift::evaluateEquatableStructMacro(ASTContext &ctx,
+                                                AbstractFunctionDecl *fn,
+                                                MacroDecl *macro,
+                                                CustomAttr *attr) {
+  auto *parent = fn->getParent();
+  assert(parent && "Should have a parent context");
+
+  auto *struct_decl = parent->getSelfStructDecl();
+  assert(parent && "Self should be a struct type");
+
+  SmallVector<const char *, 6> fieldNames;
+  auto alloc = llvm::BumpPtrAllocator();
+  for (auto propertyDecl : struct_decl->getStoredProperties()) {
+    if (!propertyDecl->isUserAccessible())
+      continue;
+    fieldNames.emplace_back(
+        cloneString(alloc, propertyDecl->getNameStr().str().c_str()));
+  }
+
+  char *outBuffer;
+  size_t outLen;
+  const char *const *propertyNames = fieldNames.data();
+  if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
+                                               &outBuffer, &outLen)) {
+    return nullptr;
+  }
+
+  auto *SF =
+      getSourceFileForAstGenMacro(ctx, fn, macro, attr, outBuffer, outLen);
+  if (outBuffer) {
+    std::free(outBuffer);
+  }
+
+  return SF;
 }

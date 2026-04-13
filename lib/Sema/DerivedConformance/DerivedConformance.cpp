@@ -20,10 +20,8 @@
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/Pattern.h"
 #include "swift/AST/ProtocolConformance.h"
-#include "swift/AST/SourceFile.h"
 #include "swift/AST/Stmt.h"
 #include "swift/AST/Types.h"
-#include "swift/Basic/Assertions.h"
 #include "swift/ClangImporter/ClangModule.h"
 
 using namespace swift;
@@ -346,9 +344,8 @@ ValueDecl *DerivedConformance::getDerivableRequirement(NominalTypeDecl *nominal,
     if (name.isSimpleName(ctx.Id_unownedExecutor)) {
       if (nominal->isDistributedActor()) {
         return getRequirement(KnownProtocolKind::DistributedActor);
-      } else {
-        return getRequirement(KnownProtocolKind::Actor);
       }
+      return getRequirement(KnownProtocolKind::Actor);
     }
 
     return nullptr;

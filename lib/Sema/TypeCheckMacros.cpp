@@ -17,14 +17,13 @@
 #include "TypeCheckMacros.h"
 #include "TypeCheckType.h"
 #include "TypeChecker.h"
-#include "swift/ABI/MetadataValues.h"
+#include "DerivedConformance/DerivedConformanceMacros.h"
 #include "swift/AST/ASTBridging.h"
 #include "swift/AST/ASTContext.h"
 #include "swift/AST/ASTMangler.h"
 #include "swift/AST/ASTNode.h"
 #include "swift/AST/ASTPrinter.h"
 #include "swift/AST/Decl.h"
-#include "swift/AST/DiagnosticsFrontend.h"
 #include "swift/AST/DiagnosticsParse.h"
 #include "swift/AST/Expr.h"
 #include "swift/AST/FreestandingMacroExpansion.h"
@@ -51,11 +50,8 @@
 #include "swift/Sema/ConstraintSystem.h"
 #include "swift/Sema/IDETypeChecking.h"
 #include "swift/Subsystems.h"
-#include "llvm/Config/config.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorHandling.h"
-
-#include <cstdlib>
 
 #define DEBUG_TYPE "macros"
 
@@ -1385,181 +1381,6 @@ swift::expandFreestandingMacro(MacroExpansionDecl *med) {
       decl->setDeclContext(dc);
   }
   return macroSourceFile->getBufferID();
-}
-
-static bool isAstGenMacro(MacroDecl *macro) {
-  auto macroDef = macro->getDefinition();
-  if (macroDef.kind != MacroDefinition::Kind::Builtin) {
-    return false;
-  }
-  auto builtinKind = macroDef.getBuiltinKind();
-  return builtinKind == BuiltinMacroKind::DerivedConformanceMacro;
-}
-
-static SourceFile *
-getSourceFileForAstGenMacro(ASTContext &ctx, AbstractFunctionDecl *fn,
-                            MacroDecl *macro, CustomAttr *attr,
-                            const char *outBuffer, size_t outLen) {
-  auto bufferID = ctx.SourceMgr.addMemBufferCopy(StringRef(outBuffer, outLen),
-                                                 "__ast_gen_macro_expansion__");
-
-  auto *sd = fn->getDeclContext()->getSelfNominalTypeDecl();
-  GeneratedSourceInfo sourceInfo;
-  auto startLoc = sd->getStartLoc();
-  sourceInfo.originalSourceRange =
-      CharSourceRange(ctx.SourceMgr, startLoc, startLoc);
-  sourceInfo.kind = GeneratedSourceInfo::BodyMacroExpansion;
-  auto bufferStart = ctx.SourceMgr.getLocForBufferStart(bufferID);
-  sourceInfo.generatedSourceRange = CharSourceRange(bufferStart, outLen);
-  sourceInfo.astNode = ASTNode(fn).getOpaqueValue();
-  sourceInfo.declContext = fn;
-  sourceInfo.attachedMacroCustomAttr = attr;
-  sourceInfo.macroName = macro->getName().getBaseName().userFacingName().str();
-  auto *SF = new (ctx) SourceFile(*fn->getParentModule(),
-                                  SourceFileKind::MacroExpansion, bufferID);
-  // auto *swiftModule = ctx.getStdlibModule(true);
-  // AttributedImport<ImportedModule> stdlibImport{
-  //     ImportedModule{ImportPath::Access(), swiftModule},
-  //     /*importLoc=*/SourceLoc(),
-  //     /*options=*/ImportFlags::Testable};
-  // SF->setImports(ctx.AllocateCopy(
-  //     ArrayRef<AttributedImport<ImportedModule>>{stdlibImport}));
-
-  ctx.SourceMgr.setGeneratedSourceInfo(bufferID, sourceInfo);
-
-  return SF;
-}
-
-static SourceFile *evaluateEquatableStructMacro(ASTContext &ctx,
-                                                AbstractFunctionDecl *fn,
-                                                MacroDecl *macro,
-                                                CustomAttr *attr) {
-  auto *parent = fn->getParent();
-  assert(parent && "Should have a parent context");
-
-  auto *struct_decl = parent->getSelfStructDecl();
-  assert(parent && "Self should be a struct type");
-
-  SmallVector<const char *, 6> fieldNames;
-
-  for (auto propertyDecl : struct_decl->getStoredProperties()) {
-    if (!propertyDecl->isUserAccessible())
-      continue;
-    fieldNames.emplace_back(strdup(propertyDecl->getNameStr().str().c_str()));
-  }
-
-  auto cleanup = llvm::make_scope_exit([&] {
-    for (const auto *field : fieldNames) {
-      free((void *)field);
-    }
-  });
-
-  const char *outBuffer;
-  size_t outLen;
-  const char *const *propertyNames = fieldNames.data();
-  if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
-                                               &outBuffer, &outLen)) {
-    return nullptr;
-  }
-  return getSourceFileForAstGenMacro(ctx, fn, macro, attr, outBuffer, outLen);
-}
-
-// Matches the following C/C++ struct:
-// public struct EnumCaseInfo {
-//   let caseName: UnsafePointer<CChar>
-//   let argLabels: UnsafePointer<UnsafePointer<CChar>?>
-//   let argCount: Int
-//   let isUnavailable: Bool
-// }
-
-struct EnumCaseInfo {
-  const char *caseName;
-  const char *const *argLabels;
-  size_t argCount;
-  bool isUnavailable;
-};
-
-static const char *cloneString(llvm::BumpPtrAllocator &allocator,
-                               StringRef str) {
-  auto len = str.size() + 1;
-  auto *buf = allocator.Allocate<char>(len);
-  memcpy(buf, str.data(), len);
-  return buf;
-}
-
-static SourceFile *evaluateEquatableEnumMacro(ASTContext &ctx,
-                                              AbstractFunctionDecl *fn,
-                                              MacroDecl *macro,
-                                              CustomAttr *attr) {
-  auto *parent = fn->getParent();
-  assert(parent && "Should have a parent context");
-
-  auto *enum_decl = parent->getSelfEnumDecl();
-  assert(parent && "Self should be a enum type");
-
-  llvm::BumpPtrAllocator alloc; // Bump allocator for strings
-  SmallVector<EnumCaseInfo, 6> cases;
-
-  for (const auto *the_case : enum_decl->getAllCases()) {
-    // TODO: Handle unavailable cases
-    for (const auto *elt : the_case->getElements()) {
-      SmallVector<const char *, 6> *argLabels =
-          new (alloc) SmallVector<const char *, 6>();
-      const char *name =
-          cloneString(alloc, elt->getBaseIdentifier().str().data());
-      if (elt->hasAssociatedValues()) {
-        auto payloadType = elt->getPayloadInterfaceType();
-        if (auto tupleType = payloadType->getAs<TupleType>()) {
-          for (auto tupleElement : tupleType->getElements()) {
-            if (tupleElement.hasName()) {
-              argLabels->emplace_back(
-                  cloneString(alloc, tupleElement.getName().str().data()));
-            } else {
-              argLabels->emplace_back(nullptr);
-            }
-          }
-        } else {
-          // TODO: is this right ?
-          argLabels->emplace_back(nullptr);
-        }
-      }
-      bool isUnavailable = elt->isUnreachableAtRuntime() &&
-                           !elt->getParentEnum()->isUnreachableAtRuntime() &&
-                           ctx.getDiagnoseUnavailableCodeReached() != nullptr;
-      cases.emplace_back((EnumCaseInfo){.caseName = name,
-                                        .argLabels = argLabels->data(),
-                                        .argCount = argLabels->size(),
-                                        .isUnavailable = isUnavailable});
-    }
-  }
-
-  char *outBuffer;
-  size_t outLen;
-  if (!swift_ASTGen_expandEquatableEnumMacro(cases.data(), cases.size(),
-                                             &outBuffer, &outLen)) {
-    return nullptr;
-  }
-  auto *SF =
-      getSourceFileForAstGenMacro(ctx, fn, macro, attr, outBuffer, outLen);
-
-  // TODO: Do we want to do this ?
-  if (outBuffer) {
-    std::free(outBuffer);
-  }
-
-  return SF;
-}
-
-static SourceFile *evaluateASTGenMacro(ASTContext &ctx, MacroDecl *macro,
-                                       AbstractFunctionDecl *fn,
-                                       CustomAttr *attr) {
-  if (macro->getBaseName() == "EquatableStructMacro") {
-    return evaluateEquatableStructMacro(ctx, fn, macro, attr);
-  }
-  if (macro->getBaseName() == "EquatableEnumMacro") {
-    return evaluateEquatableEnumMacro(ctx, fn, macro, attr);
-  }
-  return nullptr;
 }
 
 static SourceFile *

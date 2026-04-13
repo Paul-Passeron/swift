@@ -28,6 +28,7 @@ add_swift_host_library(swiftSema STATIC
   CompletionContextFinder.cpp
   DebuggerTestingTransform.cpp
   DerivedConformance/DerivedConformance.cpp
+  DerivedConformance/DerivedConformanceMacros.cpp
   DerivedConformance/DerivedConformanceActor.cpp
   DerivedConformance/DerivedConformanceAdditiveArithmetic.cpp
   DerivedConformance/DerivedConformanceCaseIterable.cpp
