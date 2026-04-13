@@ -48,7 +48,7 @@ func getEnumCasePat(
 }
 
 func expandEquatableEnumMacroBody(
-  cases: [(caseName: String, argLabels: [String?])],
+  cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)],
   lhsName lhs: String = "a",
   rhsName rhs: String = "b"
 )
@@ -58,10 +58,16 @@ func expandEquatableEnumMacroBody(
     return CodeBlockSyntax {}
   }
 
-  let casesSyntaxes: [SwitchCaseSyntax] = cases.map { (caseName, argLabels) in
+  let casesSyntaxes: [SwitchCaseSyntax] = cases.map { (caseName, argLabels, isUnavailable) in
     let lhsPat = getEnumCasePat(varPrefix: "l", caseName: caseName, argLabels: argLabels)
     let rhsPat = getEnumCasePat(varPrefix: "r", caseName: caseName, argLabels: argLabels)
-
+    if isUnavailable {
+      let casePat = getEnumCasePat(varPrefix: "l", caseName: caseName, argLabels: [])
+      return """
+        case (\(raw: casePat), _), (_, \(raw: casePat)):
+          fatalError("unavailable code reached")
+        """ as SwitchCaseSyntax
+    }
     let guards: String = argLabels.enumerated().map { (i, _) in
       "l\(i) == r\(i)"
     }.joined(separator: " && ")

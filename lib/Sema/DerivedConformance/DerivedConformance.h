@@ -18,6 +18,8 @@
 #ifndef SWIFT_SEMA_DERIVEDCONFORMANCE_DERIVEDCONFORMANCE_H
 #define SWIFT_SEMA_DERIVEDCONFORMANCE_DERIVEDCONFORMANCE_H
 
+#define USE_MACROS
+
 #include "swift/AST/Builtins.h"
 #include "swift/Basic/LLVM.h"
 #include <utility>
@@ -322,7 +324,7 @@ public:
   /// Derive a Decodable requirement for a struct type.
   ///
   /// \returns the derived member, which will also be added to the type.
-  ValueDecl *deriveDecodable(ValueDecl *requirement);  
+  ValueDecl *deriveDecodable(ValueDecl *requirement);
 
   /// Whether we can derive the given DistributedActor requirement in the given context.
   static bool canDeriveDistributedActor(NominalTypeDecl *nominal,

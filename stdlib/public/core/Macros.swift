@@ -72,9 +72,9 @@
   public macro error(_ message: String) = Builtin.ErrorMacro
 
   @attached(body)
-  public macro EquatableStructMacro(_ names: String...) = Builtin.EquatableStructMacro
+  public macro EquatableStructMacro(_ names: String...) = Builtin.DerivedConformanceMacro
 
   @attached(body)
-  public macro EquatableEnumMacro() = Builtin.EquatableEnumMacro
+  public macro EquatableEnumMacro() = Builtin.DerivedConformanceMacro
 
-#endif // $Macros && hasAttribute(attached)
+#endif  // $Macros && hasAttribute(attached)

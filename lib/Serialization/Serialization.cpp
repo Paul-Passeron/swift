@@ -5366,11 +5366,8 @@ public:
         case BuiltinMacroKind::IsolationMacro:
           builtinID = 2;
           break;
-        case BuiltinMacroKind::EquatableEnumMacro:
+        case BuiltinMacroKind::DerivedConformanceMacro:
           builtinID = 3;
-          break;
-        case BuiltinMacroKind::EquatableStructMacro:
-          builtinID = 4;
           break;
         }
         break;

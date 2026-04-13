@@ -5637,6 +5637,10 @@ public:
         builtinKind = BuiltinMacroKind::IsolationMacro;
         break;
 
+      case 3:
+        builtinKind = BuiltinMacroKind::DerivedConformanceMacro;
+        break;
+
       default:
         break;
       }
@@ -8803,7 +8807,7 @@ public:
     size_t align = alignof(LazyConformanceLoaderInfo);
 
     // TODO: maybe don't permanently allocate this?
-    void *memory = mf.getContext().Allocate(size, align); 
+    void *memory = mf.getContext().Allocate(size, align);
     return new (memory) LazyConformanceLoaderInfo(ids);
   }
 

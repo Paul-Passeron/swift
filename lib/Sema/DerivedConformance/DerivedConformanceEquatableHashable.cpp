@@ -70,7 +70,6 @@ bool DerivedConformance::canDeriveEquatable(DeclContext *DC,
   return canDeriveConformance(DC, type, equatableProto);
 }
 
-#define USE_MACROS
 #ifndef USE_MACROS
 
 static std::pair<BraceStmt *, bool>
@@ -530,7 +529,6 @@ static FuncDecl *createEqDeclForTypeDecl(DerivedConformance &derived,
 static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
                                             FuncDecl *eqDecl, TypeDecl *sd,
                                             StringRef name) {
-
   ASTContext &C = derived.Context;
   auto atLoc = derived.ConformanceDecl->getStartLoc();
 
@@ -547,11 +545,9 @@ static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
   // of the macro
   auto argList = ArgumentList::create(C, atLoc, ArrayRef<Argument>(), atLoc,
                                       std::nullopt, /*isImplicit=*/true);
-
   auto *attr = CustomAttr::create(
       C, atLoc, typeExpr, CustomAttrOwner(static_cast<Decl *>(eqDecl)),
       new (C) CustomAttributeInitializer(eqDecl->getDeclContext()), argList);
-
   return attr;
 }
 

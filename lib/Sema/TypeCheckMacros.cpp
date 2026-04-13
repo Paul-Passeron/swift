@@ -189,11 +189,9 @@ MacroDefinition MacroDefinitionRequest::evaluate(Evaluator &evaluator,
   case BridgedBuiltinIsolationMacro:
     return MacroDefinition::forBuiltin(BuiltinMacroKind::IsolationMacro);
 
-  case BridgedBuiltinEquatableEnumMacro:
-    return MacroDefinition::forBuiltin(BuiltinMacroKind::EquatableEnumMacro);
-
-  case BridgedBuiltinEquatableStructMacro:
-    return MacroDefinition::forBuiltin(BuiltinMacroKind::EquatableStructMacro);
+  case BridgedBuiltinDerivedConformanceMacro:
+    return MacroDefinition::forBuiltin(
+        BuiltinMacroKind::DerivedConformanceMacro);
   }
 
   // Type-check the macro expansion.
@@ -1184,11 +1182,9 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
           scratchSpace, adjustMacroExpansionBufferName(*discriminator));
       break;
     }
-    case BuiltinMacroKind::EquatableEnumMacro:
-    case BuiltinMacroKind::EquatableStructMacro: {
+    case BuiltinMacroKind::DerivedConformanceMacro:
       ctx.Diags.diagnose(loc, diag::macro_role_attr_expected_attached_kind);
       return nullptr;
-    }
     }
     break;
   }
@@ -1303,8 +1299,7 @@ std::optional<unsigned> swift::expandMacroExpr(MacroExpansionExpr *mee) {
   case MacroDefinition::Kind::Builtin:
     switch (definition.getBuiltinKind()) {
     case BuiltinMacroKind::ExternalMacro:
-    case BuiltinMacroKind::EquatableEnumMacro:
-    case BuiltinMacroKind::EquatableStructMacro:
+    case BuiltinMacroKind::DerivedConformanceMacro:
       break;
 
     case BuiltinMacroKind::IsolationMacro:
@@ -1312,8 +1307,6 @@ std::optional<unsigned> swift::expandMacroExpr(MacroExpansionExpr *mee) {
           macroBufferRange.getStart(), expandedType);
       break;
     }
-
-
   }
 
   if (!expandedExpr) {
@@ -1395,14 +1388,12 @@ swift::expandFreestandingMacro(MacroExpansionDecl *med) {
 }
 
 static bool isAstGenMacro(MacroDecl *macro) {
-  // TODO: Have an actual solution rather than this atrocity
-  if (macro->getBaseName() == "EquatableStructMacro") {
-    return true;
+  auto macroDef = macro->getDefinition();
+  if (macroDef.kind != MacroDefinition::Kind::Builtin) {
+    return false;
   }
-  if (macro->getBaseName() == "EquatableEnumMacro") {
-    return true;
-  }
-  return false;
+  auto builtinKind = macroDef.getBuiltinKind();
+  return builtinKind == BuiltinMacroKind::DerivedConformanceMacro;
 }
 
 static SourceFile *
@@ -1424,9 +1415,16 @@ getSourceFileForAstGenMacro(ASTContext &ctx, AbstractFunctionDecl *fn,
   sourceInfo.declContext = fn;
   sourceInfo.attachedMacroCustomAttr = attr;
   sourceInfo.macroName = macro->getName().getBaseName().userFacingName().str();
-
   auto *SF = new (ctx) SourceFile(*fn->getParentModule(),
                                   SourceFileKind::MacroExpansion, bufferID);
+  // auto *swiftModule = ctx.getStdlibModule(true);
+  // AttributedImport<ImportedModule> stdlibImport{
+  //     ImportedModule{ImportPath::Access(), swiftModule},
+  //     /*importLoc=*/SourceLoc(),
+  //     /*options=*/ImportFlags::Testable};
+  // SF->setImports(ctx.AllocateCopy(
+  //     ArrayRef<AttributedImport<ImportedModule>>{stdlibImport}));
+
   ctx.SourceMgr.setGeneratedSourceInfo(bufferID, sourceInfo);
 
   return SF;
@@ -1471,12 +1469,14 @@ static SourceFile *evaluateEquatableStructMacro(ASTContext &ctx,
 //   let caseName: UnsafePointer<CChar>
 //   let argLabels: UnsafePointer<UnsafePointer<CChar>?>
 //   let argCount: Int
+//   let isUnavailable: Bool
 // }
 
 struct EnumCaseInfo {
   const char *caseName;
   const char *const *argLabels;
   size_t argCount;
+  bool isUnavailable;
 };
 
 static const char *cloneString(llvm::BumpPtrAllocator &allocator,
@@ -1523,9 +1523,13 @@ static SourceFile *evaluateEquatableEnumMacro(ASTContext &ctx,
           argLabels->emplace_back(nullptr);
         }
       }
+      bool isUnavailable = elt->isUnreachableAtRuntime() &&
+                           !elt->getParentEnum()->isUnreachableAtRuntime() &&
+                           ctx.getDiagnoseUnavailableCodeReached() != nullptr;
       cases.emplace_back((EnumCaseInfo){.caseName = name,
                                         .argLabels = argLabels->data(),
-                                        .argCount = argLabels->size()});
+                                        .argCount = argLabels->size(),
+                                        .isUnavailable = isUnavailable});
     }
   }
 
@@ -1542,6 +1546,7 @@ static SourceFile *evaluateEquatableEnumMacro(ASTContext &ctx,
   if (outBuffer) {
     std::free(outBuffer);
   }
+
   return SF;
 }
 
@@ -1562,6 +1567,7 @@ evaluateAttachedMacro(MacroDecl *macro, Decl *attachedTo, CustomAttr *attr,
                       bool passParentContext, MacroRole role,
                       ArrayRef<ProtocolDecl *> conformances = {},
                       StringRef discriminatorStr = "") {
+
   DeclContext *dc;
   if (role == MacroRole::Peer) {
     dc = attachedTo->getDeclContext();
@@ -1703,9 +1709,9 @@ evaluateAttachedMacro(MacroDecl *macro, Decl *attachedTo, CustomAttr *attr,
     switch (macroDef.getBuiltinKind()) {
     case BuiltinMacroKind::ExternalMacro:
     case BuiltinMacroKind::IsolationMacro:
-    // FIXME: These expansions should have been caught earlier, might wanna change that
-    case BuiltinMacroKind::EquatableEnumMacro:
-    case BuiltinMacroKind::EquatableStructMacro:
+    // FIXME: These expansions should have been caught earlier, might wanna
+    // change that
+    case BuiltinMacroKind::DerivedConformanceMacro:
       // FIXME: Error here.
       return nullptr;
     }
@@ -1862,8 +1868,7 @@ static SourceFile *evaluateAttachedMacro(MacroDecl *macro,
     switch (macroDef.getBuiltinKind()) {
     case BuiltinMacroKind::ExternalMacro:
     case BuiltinMacroKind::IsolationMacro:
-    case BuiltinMacroKind::EquatableEnumMacro:
-    case BuiltinMacroKind::EquatableStructMacro:
+    case BuiltinMacroKind::DerivedConformanceMacro:
       // FIXME: Error here.
       return nullptr;
     }
@@ -2416,8 +2421,9 @@ ResolveMacroRequest::evaluate(Evaluator &evaluator,
   // Macro expressions and declarations have their own stored macro
   // reference. Use it if it's there.
   if (auto *expansion = macroRef.getFreestanding()) {
-    if (auto ref = expansion->getMacroRef())
+    if (auto ref = expansion->getMacroRef()) {
       return ref;
+    }
   }
 
   auto &ctx = dc->getASTContext();
@@ -2432,13 +2438,16 @@ ResolveMacroRequest::evaluate(Evaluator &evaluator,
     // in cases where the attribute refers to a nested type in the type it's
     // attached to, since the qualified lookup there needs to expand member
     // attributes.
-    if (attr->shouldPreferPropertyWrapperOverMacro() && attr->getNominalDecl())
+    if (attr->shouldPreferPropertyWrapperOverMacro() &&
+        attr->getNominalDecl()) {
       return ConcreteDeclRef();
+    }
+  }
 
-    auto foundMacros = namelookup::lookupMacros(dc, macroRef.getModuleName(),
-                                                macroRef.getMacroName(), roles);
-    if (foundMacros.empty())
-      return ConcreteDeclRef();
+  auto foundMacros = namelookup::lookupMacros(dc, macroRef.getModuleName(),
+                                              macroRef.getMacroName(), roles);
+  if (foundMacros.empty()) {
+    return ConcreteDeclRef();
   }
 
   // Freestanding and peer macros applied at top-level scope cannot introduce
@@ -2451,9 +2460,9 @@ ResolveMacroRequest::evaluate(Evaluator &evaluator,
   // these macros at global scope if any of the macro candidates introduce
   // arbitrary names.
   if (diagnoseArbitraryGlobalNames(dc, macroRef, MacroRole::Declaration) ||
-      diagnoseArbitraryGlobalNames(dc, macroRef, MacroRole::Peer))
+      diagnoseArbitraryGlobalNames(dc, macroRef, MacroRole::Peer)) {
     return ConcreteDeclRef();
-
+  }
   // If we already have a MacroExpansionExpr, use that. Otherwise,
   // create one.
   MacroExpansionExpr *macroExpansion;
@@ -2512,7 +2521,6 @@ ResolveMacroRequest::evaluate(Evaluator &evaluator,
       expansion->setMacroRef(ref);
     }
   }
-
   return macroExpansion->getMacroRef();
 }
 
