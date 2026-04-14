@@ -545,7 +545,7 @@ static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
 
   auto *typeExpr = new (C) TypeExpr(typeRepr);
 
-  // Note: We have to use this cnstructor to have locs on the parenthesis
+  // Note: We have to use this constructor to have locs on the parenthesis
   // otherwise an empty arg list will cause a crash during the expansion
   // of the macro
   auto argList = ArgumentList::create(C, atLoc, ArrayRef<Argument>(), atLoc,
@@ -1154,6 +1154,7 @@ SourceFile *swift::evaluateEquatableStructMacro(ASTContext &ctx,
 
   auto *SF =
       getSourceFileForAstGenMacro(ctx, fn, macro, attr, outBuffer, outLen);
+  // TODO: Find a better way to handle the buffer than this
   if (outBuffer) {
     std::free(outBuffer);
   }
