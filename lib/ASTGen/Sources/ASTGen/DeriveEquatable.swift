@@ -47,6 +47,77 @@ func getEnumCasePat(
     """
 }
 
+func hasNoAssociatedValues(_ cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)]) -> Bool {
+  for the_case in cases {
+    if !the_case.argLabels.isEmpty { return false }
+  }
+  return true
+}
+
+func createDiscrSwitch(
+  cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)],
+  name: String
+) -> SwitchExprSyntax {
+
+  let casesSyntaxes: [SwitchCaseSyntax] = cases.enumerated().compactMap {
+    (i, the_case) in
+    if the_case.isUnavailable { return nil }
+    let pat: PatternSyntax = ".\(raw: the_case.caseName)"
+    return
+      """
+      case \(pat): \(raw: i)
+
+      """
+  }
+
+  return SwitchExprSyntax(
+    subject: "(\(raw: name))" as ExprSyntax,
+    cases: SwitchCaseListSyntax {
+      for c in casesSyntaxes { c }
+      // TODO: Maybe check if the enum is frozen in here
+      if casesSyntaxes.count > 1 {
+        // This was not present in the C++ version
+        // "default: -1\n" as SwitchCaseSyntax
+      }
+    }
+  )
+}
+
+// {
+//     let a_discr = switch a {
+//         case .first: 1
+//         case .snd: 2
+//         ...
+//     }
+//     let b_discr = switch b {
+//         case .first: 1
+//         case .snd: 2
+//         ...
+//     }
+//     return a_discr == b_discr
+// }
+func expandEquatableEnumMacroNoAssociatedValuesBody(
+  cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)],
+  lhsName lhs: String = "a",
+  rhsName rhs: String = "b"
+)
+  -> CodeBlockSyntax
+{
+  let lhsVarName = "\(lhs)_discr";
+  let rhsVarName = "\(rhs)_discr";
+
+  let lhsSwitch = createDiscrSwitch(cases: cases, name: lhs)
+  let rhsSwitch = createDiscrSwitch(cases: cases, name: rhs)
+
+  return CodeBlockSyntax {
+    """
+    let \(raw: lhsVarName) = \(lhsSwitch)
+    let \(raw: rhsVarName) = \(rhsSwitch)
+    return \(raw: lhsVarName) == \(raw: rhsVarName)
+    """
+  }
+}
+
 func expandEquatableEnumMacroBody(
   cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)],
   lhsName lhs: String = "a",
@@ -56,6 +127,10 @@ func expandEquatableEnumMacroBody(
 {
   if cases.isEmpty {
     return CodeBlockSyntax {}
+  }
+
+  if hasNoAssociatedValues(cases) {
+    return expandEquatableEnumMacroNoAssociatedValuesBody(cases: cases, lhsName: lhs, rhsName: rhs)
   }
 
   let casesSyntaxes: [SwitchCaseSyntax] = cases.map { (caseName, argLabels, isUnavailable) in

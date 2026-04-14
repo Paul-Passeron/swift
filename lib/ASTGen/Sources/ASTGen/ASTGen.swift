@@ -633,13 +633,6 @@ public func expandEquatableStructMacro(
   return true
 }
 
-// Matches the following C/C++ struct:
-// struct enumCaseInfo {
-//   const char *caseName;
-//   const char *const *argLabels;
-//   int argCount;
-// }
-
 public struct EnumCaseInfo {
   let caseName: UnsafePointer<CChar>
   let argLabels: UnsafePointer<UnsafePointer<CChar>?>
