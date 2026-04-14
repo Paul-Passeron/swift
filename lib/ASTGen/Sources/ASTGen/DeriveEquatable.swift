@@ -30,7 +30,6 @@ func getEnumCasePat(
   if argLabels.isEmpty {
     return ".\(raw: caseName)"
   }
-
   let cases: [String] = argLabels.enumerated().map { (i, label) in
     if let label = label {
       "\(label): let \(varPrefix)\(i)"
@@ -38,16 +37,14 @@ func getEnumCasePat(
       "let \(varPrefix)\(i)"
     }
   }
-
-  let casesJoined = cases.joined(separator: ", ")
-
   return
     """
-    .\(raw: caseName)(\(raw: casesJoined))
+    .\(raw: caseName)(\(raw: cases.joined(separator: ", ")))
     """
 }
 
 func hasNoAssociatedValues(_ cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)]) -> Bool {
+  if cases.isEmpty { return false }
   for the_case in cases {
     if !the_case.argLabels.isEmpty { return false }
   }
@@ -58,7 +55,6 @@ func createDiscrSwitch(
   cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)],
   name: String
 ) -> SwitchExprSyntax {
-
   let casesSyntaxes: [SwitchCaseSyntax] = cases.enumerated().compactMap {
     (i, the_case) in
     if the_case.isUnavailable { return nil }
@@ -74,28 +70,10 @@ func createDiscrSwitch(
     subject: "(\(raw: name))" as ExprSyntax,
     cases: SwitchCaseListSyntax {
       for c in casesSyntaxes { c }
-      // TODO: Maybe check if the enum is frozen in here
-      if casesSyntaxes.count > 1 {
-        // This was not present in the C++ version
-        // "default: -1\n" as SwitchCaseSyntax
-      }
     }
   )
 }
 
-// {
-//     let a_discr = switch a {
-//         case .first: 1
-//         case .snd: 2
-//         ...
-//     }
-//     let b_discr = switch b {
-//         case .first: 1
-//         case .snd: 2
-//         ...
-//     }
-//     return a_discr == b_discr
-// }
 func expandEquatableEnumMacroNoAssociatedValuesBody(
   cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)],
   lhsName lhs: String = "a",
@@ -126,7 +104,7 @@ func expandEquatableEnumMacroBody(
   -> CodeBlockSyntax
 {
   if cases.isEmpty {
-    return CodeBlockSyntax {}
+    return CodeBlockSyntax { "return true" }
   }
 
   if hasNoAssociatedValues(cases) {
