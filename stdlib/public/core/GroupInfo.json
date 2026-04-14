@@ -1,8 +1,5 @@
 {
-  "Assert": [
-    "Assert.swift",
-    "AssertCommon.swift"
-  ],
+  "Assert": ["Assert.swift", "AssertCommon.swift"],
   "String": [
     "ASCII.swift",
     "CString.swift",
@@ -61,9 +58,7 @@
     "UTF32.swift",
     "ValidUTF8Buffer.swift"
   ],
-  "Bool": [
-    "Bool.swift"
-  ],
+  "Bool": ["Bool.swift"],
   "Collection": [
     "Collection.swift",
     "BidirectionalCollection.swift",
@@ -92,9 +87,7 @@
     "Diffing.swift",
     "CollectionDifference.swift",
     {
-      "Type-erased": [
-        "ExistentialCollection.swift"
-      ],
+      "Type-erased": ["ExistentialCollection.swift"],
       "Lazy Views": [
         "Algorithm.swift",
         "EnumeratedSequence.swift",
@@ -110,7 +103,8 @@
         "DropWhile.swift",
         "PrefixWhile.swift",
         "LazyCollection.swift",
-        "LazySequence.swift"],
+        "LazySequence.swift"
+      ],
       "Array": [
         "Array.swift",
         "ArrayBody.swift",
@@ -125,7 +119,8 @@
         "ContiguousArrayBuffer.swift",
         "ContiguouslyStored.swift",
         "SliceBuffer.swift",
-        "SwiftNativeNSArray.swift"],
+        "SwiftNativeNSArray.swift"
+      ],
       "HashedCollections": [
         "HashTable.swift",
         "Dictionary.swift",
@@ -154,9 +149,7 @@
     "CTypes.swift",
     "MemoryLayout.swift"
   ],
-  "KeyPaths": [
-    "KeyPath.swift"
-  ],
+  "KeyPaths": ["KeyPath.swift"],
   "Reflection": [
     "Dump.swift",
     "Mirror.swift",
@@ -169,32 +162,33 @@
     "SetAlgebra.swift",
     "BuiltinMath.swift",
     {
-    "Integers": [
-      "Int128.swift",
-      "Integers.swift",
-      "IntegerTypes.swift",
-      "IntegerParsing.swift",
-      "LegacyInt128.swift",
-      "StaticBigInt.swift",
-      "UInt128.swift"],
-    "Floating": [
-      "FloatingPoint.swift",
-      "FloatingPointFromString.swift",
-      "FloatingPointParsing.swift",
-      "FloatingPointToString.swift",
-      "FloatingPointTypes.swift",
-      "FloatingPointRandom.swift"],
-    "Vector": [
-      "SIMDIntegerConcreteOperations.swift",
-      "SIMDFloatConcreteOperations.swift",
-      "SIMDMaskConcreteOperations.swift",
-      "SIMDVector.swift",
-      "SIMDVectorTypes.swift"
-    ]}
+      "Integers": [
+        "Int128.swift",
+        "Integers.swift",
+        "IntegerTypes.swift",
+        "IntegerParsing.swift",
+        "LegacyInt128.swift",
+        "StaticBigInt.swift",
+        "UInt128.swift"
+      ],
+      "Floating": [
+        "FloatingPoint.swift",
+        "FloatingPointFromString.swift",
+        "FloatingPointParsing.swift",
+        "FloatingPointToString.swift",
+        "FloatingPointTypes.swift",
+        "FloatingPointRandom.swift"
+      ],
+      "Vector": [
+        "SIMDIntegerConcreteOperations.swift",
+        "SIMDFloatConcreteOperations.swift",
+        "SIMDMaskConcreteOperations.swift",
+        "SIMDVector.swift",
+        "SIMDVectorTypes.swift"
+      ]
+    }
   ],
-  "Optional": [
-    "Optional.swift"
-  ],
+  "Optional": ["Optional.swift"],
   "Pointer": [
     "Pointer.swift",
     "SwiftifyImport.swift",
@@ -213,7 +207,7 @@
     "RawSpan.swift",
     "Span.swift"
   ],
-  "UTF8Span": [ 
+  "UTF8Span": [
     "UTF8EncodingError.swift",
     "UTF8Span.swift",
     "UTF8SpanBits.swift",
@@ -222,13 +216,8 @@
     "UTF8SpanInternalHelpers.swift",
     "UTF8SpanIterators.swift"
   ],
-  "Protocols": [
-    "CompilerProtocols.swift",
-    "ShadowProtocols.swift"
-  ],
-  "Playground": [
-    "PlaygroundDisplay.swift"
-  ],
+  "Protocols": ["CompilerProtocols.swift", "ShadowProtocols.swift"],
+  "Playground": ["PlaygroundDisplay.swift"],
   "Hashing": [
     "Hashable.swift",
     "Hasher.swift",
@@ -245,6 +234,7 @@
     "InputStream.swift",
     "LifetimeManager.swift",
     "Macros.swift",
+    "DerivedConformance.swift",
     "ManagedBuffer.swift",
     "Misc.swift",
     "OptionSet.swift",
@@ -283,7 +273,5 @@
     "Borrow.swift",
     "Inout.swift"
   ],
-  "Result": [
-    "Result.swift"
-  ]
+  "Result": ["Result.swift"]
 }

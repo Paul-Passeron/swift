@@ -71,10 +71,4 @@
   @freestanding(declaration)
   public macro error(_ message: String) = Builtin.ErrorMacro
 
-  @attached(body)
-  public macro EquatableStructMacro() = Builtin.DerivedConformanceMacro
-
-  @attached(body)
-  public macro EquatableEnumMacro() = Builtin.DerivedConformanceMacro
-
 #endif  // $Macros && hasAttribute(attached)
