@@ -470,8 +470,6 @@ ExpandMacroExpansionExprRequest::evaluate(Evaluator &evaluator,
   auto *macro = cast<MacroDecl>(macroRef.getDecl());
   if (macro->getMacroRoles().contains(MacroRole::Expression)) {
 
-    llvm::outs() << "[ExpandMacroExpansionExprRequest::evaluate]: " << __FILE__
-                 << ":" << __LINE__ << "\n";
     return expandMacroExpr(mee);
   }
   // For a non-expression macro, expand it as a declaration.
@@ -481,8 +479,6 @@ ExpandMacroExpansionExprRequest::evaluate(Evaluator &evaluator,
       (void)mee->createSubstituteDecl();
     }
     // Return the expanded buffer ID.
-    llvm::outs() << "[ExpandMacroExpansionExprRequest::evaluate]: " << __FILE__
-                 << ":" << __LINE__ << "\n";
     return evaluateOrDefault(
         evaluator, ExpandMacroExpansionDeclRequest(mee->getSubstituteDecl()),
         std::nullopt);
@@ -2061,7 +2057,6 @@ static TinyPtrVector<ProtocolDecl *> getIntroducedConformances(
 
 std::optional<unsigned> swift::expandMembers(CustomAttr *attr, MacroDecl *macro,
                                              Decl *decl) {
-  llvm::errs() << "[expandMembers] entered\n";
   auto nominal = dyn_cast<NominalTypeDecl>(decl);
   if (!nominal) {
     auto ext = dyn_cast<ExtensionDecl>(decl);
@@ -2072,9 +2067,6 @@ std::optional<unsigned> swift::expandMembers(CustomAttr *attr, MacroDecl *macro,
     if (!nominal)
       return std::nullopt;
   }
-
-  llvm::errs() << "[expandMembers] Expanding member macro for "
-               << nominal->getName() << "\n";
 
   auto introducedConformances =
       getIntroducedConformances(nominal, MacroRole::Member, macro);

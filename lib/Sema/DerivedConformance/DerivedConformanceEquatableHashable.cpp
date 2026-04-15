@@ -39,6 +39,7 @@
 #include "swift/Basic/Assertions.h"
 #include "swift/Basic/OptionSet.h"
 #include "swift/Sema/IDETypeChecking.h"
+#include "clang/AST/Decl.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -471,159 +472,43 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   return nullptr;
 }
 #else
-static FuncDecl *createEqDeclForTypeDecl(DerivedConformance &derived,
-                                         TypeDecl *decl) {
-  ASTContext &C = derived.Context;
-  auto parentDC = derived.getConformanceContext();
-  auto selfIfaceTy = parentDC->getSelfInterfaceType();
-  auto atLoc = derived.ConformanceDecl->getStartLoc();
 
-  auto getParamDecl = [&](StringRef s) -> ParamDecl * {
-    auto *param = new (C) ParamDecl(atLoc, atLoc, Identifier(), atLoc,
-                                    C.getIdentifier(s), parentDC);
-    param->setSpecifier(ParamSpecifier::Default);
-    param->setInterfaceType(selfIfaceTy);
-    param->setImplicit();
-    return param;
-  };
-
-  ParameterList *params =
-      ParameterList::create(C, {getParamDecl("a"), getParamDecl("b")});
-
-  auto boolTy = C.getBoolType();
-
-  Identifier generatedIdentifier;
-  bool isDerivedEnumEquals = false;
-  if (parentDC->getParentModule()->isResilient()) {
-    generatedIdentifier = C.Id_EqualsOperator;
-  } else if (selfIfaceTy->getEnumOrBoundGenericEnum()) {
-    generatedIdentifier = C.Id_derived_enum_equals;
-    isDerivedEnumEquals = true;
-  } else {
-    assert(selfIfaceTy->getStructOrBoundGenericStruct());
-    generatedIdentifier = C.Id_derived_struct_equals;
-  }
-
-  DeclName name(C, generatedIdentifier, params);
-  auto *const eqDecl = FuncDecl::createImplicit(
-      C, StaticSpellingKind::KeywordStatic, name, /*NameLoc=*/atLoc,
-      /*Async=*/false,
-      /*Throws=*/false, /*ThrownType=*/Type(),
-      /*GenericParams=*/nullptr, params, boolTy, parentDC);
-  eqDecl->setUserAccessible(false);
-  eqDecl->setSynthesized();
-  if (isDerivedEnumEquals) {
-    eqDecl->addAttribute(new (C) SemanticsAttr(
-        "derived_enum_equals", SourceLoc(), SourceRange(), /*Implicit=*/true));
-  }
-
-  // Add the @_implements(Equatable, ==(_:_:)) attribute
-  if (generatedIdentifier != C.Id_EqualsOperator) {
-    auto equatableProto = C.getProtocol(KnownProtocolKind::Equatable);
-    SmallVector<Identifier, 2> argumentLabels = {Identifier(), Identifier()};
-    auto equalsDeclName =
-        DeclName(C, DeclBaseName(C.Id_EqualsOperator), argumentLabels);
-    eqDecl->addAttribute(
-        ImplementsAttr::create(parentDC, equatableProto, equalsDeclName));
-  }
-
-  if (!C.getEqualIntDecl()) {
-    derived.ConformanceDecl->diagnose(diag::no_equal_overload_for_int);
-    return nullptr;
-  }
-
-  addNonIsolatedToSynthesized(derived, eqDecl);
-
-  // This is so that SILGen does not "forget" to expand the body
-  auto *emptyBody = BraceStmt::create(C, SourceLoc(), {}, SourceLoc(),
-                                      /*Implicit=*/true);
-  eqDecl->setBody(emptyBody, AbstractFunctionDecl::BodyKind::Parsed);
-
-  return eqDecl;
+static SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived,
+                                       ValueDecl *requirement) {
+  auto atLoc = derived.Conformance->getLoc();
+  atLoc = atLoc.isValid() ? atLoc : requirement->getStartLoc();
+  atLoc = atLoc.isValid() ? atLoc : requirement->getEndLoc();
+  atLoc = atLoc.isValid() ? atLoc : derived.Nominal->getBraces().Start;
+  atLoc = atLoc.isValid()
+              ? atLoc
+              : derived.Nominal->getBraces().End.getAdvancedLocOrInvalid(-1);
+  atLoc = atLoc.isValid() ? atLoc : derived.Nominal->getBraces().End;
+  assert(atLoc.isValid() && "Conformance loc is invalid");
+  return atLoc;
 }
 
-static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
-                                            FuncDecl *eqDecl, TypeDecl *sd,
-                                            StringRef name) {
-  ASTContext &C = derived.Context;
-  auto atLoc = derived.ConformanceDecl->getStartLoc();
-
-  auto declName = DeclName(C.getIdentifier(name));
-  auto declNameRef = DeclNameRef(C, Identifier(), declName);
-
-  auto typeRepr =
-      UnqualifiedIdentTypeRepr::create(C, DeclNameLoc(atLoc), declNameRef);
-
-  auto *typeExpr = new (C) TypeExpr(typeRepr);
-
-  // Note: We have to use this constructor to have locs on the parenthesis
-  // otherwise an empty arg list will cause a crash during the expansion
-  // of the macro
-  auto argList = ArgumentList::create(C, atLoc, ArrayRef<Argument>(), atLoc,
-                                      std::nullopt, /*isImplicit=*/true);
-  auto *attr = CustomAttr::create(
-      C, atLoc, typeExpr, CustomAttrOwner(static_cast<Decl *>(eqDecl)),
-      new (C) CustomAttributeInitializer(eqDecl->getDeclContext()), argList);
-  return attr;
-}
-
-static CustomAttr *createEquatableMacroDeclAttr(DerivedConformance &derived,
-                                                TypeDecl *sd) {
-  ASTContext &C = derived.Context;
-  // auto endLoc = derived.ConformanceDecl->getEndLoc();
-  // auto atLoc =
-  //     endLoc.isValid() ? endLoc : derived.ConformanceDecl->getStartLoc();
-
-  auto atLoc = derived.ConformanceDecl->getStartLoc();
-
-  auto declName = DeclName(C.getIdentifier("EquatableDeclMacro"));
-  auto declNameRef = DeclNameRef(C, Identifier(), declName);
-
-  auto typeRepr =
-      UnqualifiedIdentTypeRepr::create(C, DeclNameLoc(atLoc), declNameRef);
-
-  auto *typeExpr = new (C) TypeExpr(typeRepr);
-
-  // Note: We have to use this constructor to have locs on the parenthesis
-  // otherwise an empty arg list will cause a crash during the expansion
-  // of the macro
-  auto argList = ArgumentList::create(C, atLoc, ArrayRef<Argument>(), atLoc,
-                                      std::nullopt, /*isImplicit=*/true);
-  auto *attr = CustomAttr::create(
-      C, atLoc, typeExpr, CustomAttrOwner(static_cast<Decl *>(sd)),
-      new (C) CustomAttributeInitializer(sd->getDeclContext()), argList, true);
-  return attr;
-}
-
-ValueDecl *
-DerivedConformance::deriveEquatableWithMacro(ValueDecl *requirement) {
+ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   if (requirement->getBaseName() == "==") {
     auto *dc = this->getConformanceContext();
     auto &C = dc->getASTContext();
-    auto atLoc = requirement->getStartLoc();
-    atLoc = atLoc.isValid() ? atLoc : requirement->getEndLoc();
-    atLoc = atLoc.isValid() ? atLoc : Nominal->getBraces().Start;
-    atLoc = atLoc.isValid()
-                ? atLoc
-                : Nominal->getBraces().End.getAdvancedLocOrInvalid(-1);
-    atLoc = atLoc.isValid() ? atLoc : Nominal->getBraces().End;
-
+    auto atLoc = getValidSourceLocForImplicit(*this, requirement);
     auto declName = DeclName(C.getIdentifier("EquatableDeclMacro"));
     auto declNameRef = DeclNameRef(C, Identifier(), declName);
-    auto argList =
-        ArgumentList::createImplicit(C, atLoc, ArrayRef<Argument>(), atLoc);
     MacroExpansionDecl *free = MacroExpansionDecl::create(
         dc, atLoc, declNameRef, DeclNameLoc(atLoc), SourceLoc(),
-        ArrayRef<TypeRepr *>(), SourceLoc(), argList);
+        ArrayRef<TypeRepr *>(), SourceLoc(), nullptr);
     ValueDecl *val = nullptr;
     free->setImplicit(true);
     free->setDeclContext(dc);
-    this->addMemberToConformanceContext(dyn_cast<Decl>(free), nullptr);
+    addMemberToConformanceContext(dyn_cast<Decl>(free), nullptr);
 
+    // Contains a single node
     free->forEachExpandedNode([&](ASTNode node) {
       auto *decl = node.dyn_cast<Decl *>();
       if (decl) {
-        val = dyn_cast<ValueDecl>(decl);
+        auto *fdecl = dyn_cast<FuncDecl>(decl);
+        assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
+        val = static_cast<ValueDecl *>(fdecl);
       }
       if (!val) {
         llvm_unreachable("val is nullptr: MISSING WITNESS");
@@ -635,34 +520,37 @@ DerivedConformance::deriveEquatableWithMacro(ValueDecl *requirement) {
   return nullptr;
 }
 
-ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
-  if (checkAndDiagnoseDisallowedContext(requirement))
-    return nullptr;
+// [[deprecated("Use deriveEquatableWithMacro instead")]]
+// ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
+//   // if (checkAndDiagnoseDisallowedContext(requirement))
+//   //   return nullptr;
 
-  auto *eqDecl = createEqDeclForTypeDecl(*this, Nominal);
+//   // auto *eqDecl = createEqDeclForTypeDecl(*this, Nominal);
 
-  // Build the necessary decl.
-  if (requirement->getBaseName() == "==") {
-    CustomAttr *macroAttr;
-    if (auto *ed = dyn_cast<EnumDecl>(Nominal)) {
-      macroAttr =
-          createEquatableMacroAttr(*this, eqDecl, ed, "EquatableEnumMacro");
-    } else if (auto *sd = dyn_cast<StructDecl>(Nominal)) {
-      macroAttr =
-          createEquatableMacroAttr(*this, eqDecl, sd, "EquatableStructMacro");
-    } else {
-      llvm_unreachable("todo");
-    }
-    eqDecl->addAttribute(macroAttr);
-    eqDecl->copyFormalAccessFrom(this->Nominal,
-                                 /*sourceIsParentContext*/ true);
-    // Add the operator to the parent scope.
-    this->addMembersToConformanceContext({eqDecl});
-    return eqDecl;
-  }
-  requirement->diagnose(diag::broken_equatable_requirement);
-  return nullptr;
-}
+//   // // Build the necessary decl.
+//   // if (requirement->getBaseName() == "==") {
+//   //   CustomAttr *macroAttr;
+//   //   if (auto *ed = dyn_cast<EnumDecl>(Nominal)) {
+//   //     macroAttr =
+//   //         createEquatableMacroAttr(*this, eqDecl, ed,
+//   "EquatableEnumMacro");
+//   //   } else if (auto *sd = dyn_cast<StructDecl>(Nominal)) {
+//   //     macroAttr =
+//   //         createEquatableMacroAttr(*this, eqDecl, sd,
+//   "EquatableStructMacro");
+//   //   } else {
+//   //     llvm_unreachable("todo");
+//   //   }
+//   //   eqDecl->addAttribute(macroAttr);
+//   //   eqDecl->copyFormalAccessFrom(this->Nominal,
+//   //                                /*sourceIsParentContext*/ true);
+//   //   // Add the operator to the parent scope.
+//   //   this->addMembersToConformanceContext({eqDecl});
+//   //   return eqDecl;
+//   // }
+//   // requirement->diagnose(diag::broken_equatable_requirement);
+//   return nullptr;
+// }
 #endif // USE_MACROS
 
 void DerivedConformance::tryDiagnoseFailedEquatableDerivation(
@@ -1204,39 +1092,100 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
   return nullptr;
 }
 
-// SourceFile *swift::evaluateEquatableStructMacro(ASTContext &ctx,
-//                                                 AbstractFunctionDecl *fn,
-//                                                 MacroDecl *macro,
-//                                                 CustomAttr *attr) {
-//   auto *parent = fn->getParent();
-//   assert(parent && "Should have a parent context");
+std::unique_ptr<llvm::MemoryBuffer> swift::evaluateEquatableEnumMacroBuffer(
+    ASTContext &ctx,
+    AbstractFunctionDecl *fn, // Can be null if not a body macro
+    MacroDecl *macro, CustomAttr *attr) {
+  auto *parent = fn->getParent();
+  assert(parent && "Should have a parent context");
 
-//   auto *struct_decl = parent->getSelfStructDecl();
-//   assert(parent && "Self should be a struct type");
+  auto *enum_decl = parent->getSelfEnumDecl();
+  assert(parent && "Self should be a enum type");
 
-//   SmallVector<const char *, 6> fieldNames;
-//   auto alloc = llvm::BumpPtrAllocator();
-//   for (auto propertyDecl : struct_decl->getStoredProperties()) {
-//     if (!propertyDecl->isUserAccessible())
-//       continue;
-//     fieldNames.emplace_back(
-//         cloneString(alloc, propertyDecl->getNameStr().str().c_str()));
-//   }
+  llvm::BumpPtrAllocator alloc; // Bump allocator for strings
+  SmallVector<EnumCaseInfo, 6> cases;
 
-//   char *outBuffer;
-//   size_t outLen;
-//   const char *const *propertyNames = fieldNames.data();
-//   if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
-//                                                &outBuffer, &outLen)) {
-//     return nullptr;
-//   }
+  for (const auto *the_case : enum_decl->getAllCases()) {
+    // TODO: Handle unavailable cases
+    for (const auto *elt : the_case->getElements()) {
+      SmallVector<const char *, 6> *argLabels =
+          new (alloc) SmallVector<const char *, 6>();
+      const char *name =
+          cloneString(alloc, elt->getBaseIdentifier().str().data());
+      if (elt->hasAssociatedValues()) {
+        auto payloadType = elt->getPayloadInterfaceType();
+        if (auto tupleType = payloadType->getAs<TupleType>()) {
+          for (auto tupleElement : tupleType->getElements()) {
+            if (tupleElement.hasName()) {
+              argLabels->emplace_back(
+                  cloneString(alloc, tupleElement.getName().str().data()));
+            } else {
+              argLabels->emplace_back(nullptr);
+            }
+          }
+        } else {
+          // TODO: is this right ?
+          argLabels->emplace_back(nullptr);
+        }
+      }
+      bool isUnavailable = elt->isUnreachableAtRuntime() &&
+                           !elt->getParentEnum()->isUnreachableAtRuntime() &&
+                           ctx.getDiagnoseUnavailableCodeReached() != nullptr;
+      cases.emplace_back((EnumCaseInfo){.caseName = name,
+                                        .argLabels = argLabels->data(),
+                                        .argCount = argLabels->size(),
+                                        .isUnavailable = isUnavailable});
+    }
+  }
 
-//   auto *SF =
-//       getSourceFileForAstGenMacro(ctx, fn, macro, attr, outBuffer, outLen);
-//   // TODO: Find a better way to handle the buffer than this
-//   if (outBuffer) {
-//     std::free(outBuffer);
-//   }
+  char *outBuffer;
+  size_t outLen;
+  if (!swift_ASTGen_expandEquatableEnumMacro(cases.data(), cases.size(),
+                                             &outBuffer, &outLen)) {
+    return nullptr;
+  }
 
-//   return SF;
-// }
+  return getBufferForAstGenMacro(outBuffer, outLen);
+}
+
+std::unique_ptr<llvm::MemoryBuffer>
+swift::evaluateEquatableDeclMacroBuffer(ASTContext &ctx, TypeDecl *ty,
+                                        MacroExpansionDecl *expansion,
+                                        MacroDecl *macro) {
+  char *outBuffer;
+  size_t outLen;
+  if (!swift_ASTGen_expandEquatableDeclMacro(isa<EnumDecl>(ty), &outBuffer,
+                                             &outLen)) {
+    return nullptr;
+  }
+  return getBufferForAstGenMacro(outBuffer, outLen);
+}
+
+std::unique_ptr<llvm::MemoryBuffer>
+swift::evaluateEquatableStructMacroBuffer(ASTContext &ctx,
+                                          AbstractFunctionDecl *fn,
+                                          MacroDecl *macro, CustomAttr *attr) {
+  auto *parent = fn->getParent();
+  assert(parent && "Should have a parent context");
+
+  auto *struct_decl = parent->getSelfStructDecl();
+  assert(parent && "Self should be a struct type");
+
+  SmallVector<const char *, 6> fieldNames;
+  auto alloc = llvm::BumpPtrAllocator();
+  for (auto propertyDecl : struct_decl->getStoredProperties()) {
+    if (!propertyDecl->isUserAccessible())
+      continue;
+    fieldNames.emplace_back(
+        cloneString(alloc, propertyDecl->getNameStr().str().c_str()));
+  }
+
+  char *outBuffer;
+  size_t outLen;
+  const char *const *propertyNames = fieldNames.data();
+  if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
+                                               &outBuffer, &outLen)) {
+    return nullptr;
+  }
+  return getBufferForAstGenMacro(outBuffer, outLen);
+}
