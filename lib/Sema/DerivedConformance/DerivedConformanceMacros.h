@@ -19,45 +19,26 @@
 #define SWIFT_SEMA_DERIVEDCONFORMANCE_DERIVEDCONFORMANCEMACRO_H
 
 #include "swift/AST/Decl.h"
-#include "swift/AST/SourceFile.h"
 namespace swift {
 
 bool isAstGenMacro(MacroDecl *macro);
-
-SourceFile *evaluateASTGenMacro(ASTContext &ctx, MacroDecl *macro, Decl *decl,
-                                CustomAttr *attr);
 
 std::unique_ptr<llvm::MemoryBuffer> evaluateASTGenMacroBuffer(ASTContext &ctx,
                                                               MacroDecl *macro,
                                                               Decl *decl,
                                                               CustomAttr *attr);
-
-SourceFile *getSourceFileForAstGenMacro(ASTContext &ctx,
-                                        AbstractFunctionDecl *fn,
-                                        MacroDecl *macro, CustomAttr *attr,
-                                        const char *outBuffer, size_t outLen);
-
 std::unique_ptr<llvm::MemoryBuffer>
-getBufferForAstGenMacro(ASTContext &ctx, AbstractFunctionDecl *fn,
-                        MacroDecl *macro, CustomAttr *attr,
-                        const char *outBuffer, size_t outLen);
+getBufferForAstGenMacro(const char *outBuffer, size_t outLen);
+// std::unique_ptr<llvm::MemoryBuffer>
+// getBufferForAstGenMacro(ASTContext &ctx, AbstractFunctionDecl *fn,
+//                         MacroDecl *macro, CustomAttr *attr,
+//                         const char *outBuffer, size_t outLen);
 
-std::unique_ptr<llvm::MemoryBuffer> getBufferForAstGenFreestandingMacro(
-    ASTContext &ctx, NominalTypeDecl *ty, MacroDecl *macro,
-    MacroExpansionDecl *expansion, const char *outBuffer, size_t outLen);
+// std::unique_ptr<llvm::MemoryBuffer> getBufferForAstGenFreestandingMacro(
+//     ASTContext &ctx, NominalTypeDecl *ty, MacroDecl *macro,
+//     MacroExpansionDecl *expansion, const char *outBuffer, size_t outLen);
 
 // ==== Equatable =============================================================
-SourceFile *evaluateEquatableStructMacro(ASTContext &ctx,
-                                         AbstractFunctionDecl *fn,
-                                         MacroDecl *macro, CustomAttr *attr);
-
-SourceFile *evaluateEquatableEnumMacro(ASTContext &ctx,
-                                       AbstractFunctionDecl *fn,
-                                       MacroDecl *macro, CustomAttr *attr);
-
-SourceFile *evaluateEquatableDeclMacro(ASTContext &ctx, NominalTypeDecl *ty,
-                                       MacroExpansionDecl *expansion,
-                                       MacroDecl *macro);
 
 std::unique_ptr<llvm::MemoryBuffer>
 evaluateEquatableStructMacroBuffer(ASTContext &ctx, AbstractFunctionDecl *fn,
@@ -68,7 +49,7 @@ evaluateEquatableEnumMacroBuffer(ASTContext &ctx, AbstractFunctionDecl *fn,
                                  MacroDecl *macro, CustomAttr *attr);
 
 std::unique_ptr<llvm::MemoryBuffer>
-evaluateEquatableDeclMacroBuffer(ASTContext &ctx, NominalTypeDecl *ty,
+evaluateEquatableDeclMacroBuffer(ASTContext &ctx, TypeDecl *ty,
                                  MacroExpansionDecl *expansion,
                                  MacroDecl *macro);
 

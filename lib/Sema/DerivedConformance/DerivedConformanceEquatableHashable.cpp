@@ -618,7 +618,6 @@ DerivedConformance::deriveEquatableWithMacro(ValueDecl *requirement) {
     ValueDecl *val = nullptr;
     free->setImplicit(true);
     free->setDeclContext(dc);
-    llvm::errs() << static_cast<const void *>(free->getDeclContext()) << "\n";
     this->addMemberToConformanceContext(dyn_cast<Decl>(free), nullptr);
 
     free->forEachExpandedNode([&](ASTNode node) {
@@ -1205,39 +1204,39 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
   return nullptr;
 }
 
-SourceFile *swift::evaluateEquatableStructMacro(ASTContext &ctx,
-                                                AbstractFunctionDecl *fn,
-                                                MacroDecl *macro,
-                                                CustomAttr *attr) {
-  auto *parent = fn->getParent();
-  assert(parent && "Should have a parent context");
+// SourceFile *swift::evaluateEquatableStructMacro(ASTContext &ctx,
+//                                                 AbstractFunctionDecl *fn,
+//                                                 MacroDecl *macro,
+//                                                 CustomAttr *attr) {
+//   auto *parent = fn->getParent();
+//   assert(parent && "Should have a parent context");
 
-  auto *struct_decl = parent->getSelfStructDecl();
-  assert(parent && "Self should be a struct type");
+//   auto *struct_decl = parent->getSelfStructDecl();
+//   assert(parent && "Self should be a struct type");
 
-  SmallVector<const char *, 6> fieldNames;
-  auto alloc = llvm::BumpPtrAllocator();
-  for (auto propertyDecl : struct_decl->getStoredProperties()) {
-    if (!propertyDecl->isUserAccessible())
-      continue;
-    fieldNames.emplace_back(
-        cloneString(alloc, propertyDecl->getNameStr().str().c_str()));
-  }
+//   SmallVector<const char *, 6> fieldNames;
+//   auto alloc = llvm::BumpPtrAllocator();
+//   for (auto propertyDecl : struct_decl->getStoredProperties()) {
+//     if (!propertyDecl->isUserAccessible())
+//       continue;
+//     fieldNames.emplace_back(
+//         cloneString(alloc, propertyDecl->getNameStr().str().c_str()));
+//   }
 
-  char *outBuffer;
-  size_t outLen;
-  const char *const *propertyNames = fieldNames.data();
-  if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
-                                               &outBuffer, &outLen)) {
-    return nullptr;
-  }
+//   char *outBuffer;
+//   size_t outLen;
+//   const char *const *propertyNames = fieldNames.data();
+//   if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
+//                                                &outBuffer, &outLen)) {
+//     return nullptr;
+//   }
 
-  auto *SF =
-      getSourceFileForAstGenMacro(ctx, fn, macro, attr, outBuffer, outLen);
-  // TODO: Find a better way to handle the buffer than this
-  if (outBuffer) {
-    std::free(outBuffer);
-  }
+//   auto *SF =
+//       getSourceFileForAstGenMacro(ctx, fn, macro, attr, outBuffer, outLen);
+//   // TODO: Find a better way to handle the buffer than this
+//   if (outBuffer) {
+//     std::free(outBuffer);
+//   }
 
-  return SF;
-}
+//   return SF;
+// }

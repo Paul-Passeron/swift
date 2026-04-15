@@ -1408,7 +1408,6 @@ evaluateAttachedMacro(MacroDecl *macro, Decl *attachedTo, CustomAttr *attr,
                       StringRef discriminatorStr = "") {
 
   DeclContext *dc;
-  llvm::errs() << "evaluateAttachedMacro: " << macro->getName() << "\n";
   if (role == MacroRole::Peer) {
     dc = attachedTo->getDeclContext();
   } else if (role == MacroRole::Conformance || role == MacroRole::Extension) {
@@ -2064,7 +2063,6 @@ std::optional<unsigned> swift::expandMembers(CustomAttr *attr, MacroDecl *macro,
                                              Decl *decl) {
   llvm::errs() << "[expandMembers] entered\n";
   auto nominal = dyn_cast<NominalTypeDecl>(decl);
-  auto isImplicit = attr->isImplicit();
   if (!nominal) {
     auto ext = dyn_cast<ExtensionDecl>(decl);
     if (!ext)
@@ -2270,7 +2268,6 @@ ConcreteDeclRef
 ResolveMacroRequest::evaluate(Evaluator &evaluator,
                               UnresolvedMacroReference macroRef) const {
   auto *dc = macroRef.getDeclContext();
-  llvm::errs() << "Macro reference: " << macroRef.getMacroName() << "\n";
 
   // Macro expressions and declarations have their own stored macro
   // reference. Use it if it's there.
@@ -2375,9 +2372,6 @@ ResolveMacroRequest::evaluate(Evaluator &evaluator,
       expansion->setMacroRef(ref);
     }
   }
-  llvm::errs() << "Macro expansion ref: ";
-  macroExpansion->getMacroRef().dump(llvm::errs());
-  llvm::errs() << "\n";
   return macroExpansion->getMacroRef();
 }
 
