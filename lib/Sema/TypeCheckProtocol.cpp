@@ -4794,6 +4794,8 @@ ConformanceChecker::resolveWitnessViaLookup(ValueDecl *requirement) {
   return ResolveWitnessResult::ExplicitFailed;
 }
 
+
+#ifdef DO_NOT_USE_MACROS
 static ValueDecl *
 deriveProtocolRequirement(const NormalProtocolConformance *Conformance,
                           NominalTypeDecl *TypeDecl, ValueDecl *Requirement) {
@@ -4851,11 +4853,80 @@ deriveProtocolRequirement(const NormalProtocolConformance *Conformance,
     return derived.deriveDistributedActorSystem(Requirement);
 
   case KnownDerivableProtocolKind::OptionSet:
-      llvm_unreachable(
-          "When possible, OptionSet is derived via memberwise init synthesis");
+    llvm_unreachable(
+        "When possible, OptionSet is derived via memberwise init synthesis");
   }
   llvm_unreachable("unknown derivable protocol kind");
 }
+
+#else
+
+static ValueDecl *
+deriveProtocolRequirement(const NormalProtocolConformance *Conformance,
+                          NominalTypeDecl *TypeDecl, ValueDecl *Requirement) {
+  // Note: whenever you update this function, also update
+  // DerivedConformance::getDerivableRequirement.
+  const auto protocol = cast<ProtocolDecl>(Requirement->getDeclContext());
+
+  const auto derivableKind = protocol->getKnownDerivableProtocolKind();
+  if (!derivableKind)
+    return nullptr;
+
+  DerivedConformance derived(Conformance, TypeDecl, protocol);
+
+  switch (*derivableKind) {
+  case KnownDerivableProtocolKind::RawRepresentable:
+    return derived.deriveRawRepresentable(Requirement);
+
+  case KnownDerivableProtocolKind::CaseIterable:
+    return derived.deriveCaseIterable(Requirement);
+
+  case KnownDerivableProtocolKind::Comparable:
+    return derived.deriveComparable(Requirement);
+
+  case KnownDerivableProtocolKind::Equatable:
+    return derived.deriveEquatableWithMacro(Requirement);
+
+  case KnownDerivableProtocolKind::Hashable:
+    return derived.deriveHashable(Requirement);
+
+  case KnownDerivableProtocolKind::BridgedNSError:
+    return derived.deriveBridgedNSError(Requirement);
+
+  case KnownDerivableProtocolKind::CodingKey:
+    return derived.deriveCodingKey(Requirement);
+
+  case KnownDerivableProtocolKind::Encodable:
+    return derived.deriveEncodable(Requirement);
+
+  case KnownDerivableProtocolKind::Decodable:
+    return derived.deriveDecodable(Requirement);
+
+  case KnownDerivableProtocolKind::AdditiveArithmetic:
+    return derived.deriveAdditiveArithmetic(Requirement);
+
+  case KnownDerivableProtocolKind::Actor:
+    return derived.deriveActor(Requirement);
+
+  case KnownDerivableProtocolKind::Differentiable:
+    return derived.deriveDifferentiable(Requirement);
+
+  case KnownDerivableProtocolKind::DistributedActor:
+    return derived.deriveDistributedActor(Requirement);
+
+  case KnownDerivableProtocolKind::DistributedActorSystem:
+    return derived.deriveDistributedActorSystem(Requirement);
+
+  case KnownDerivableProtocolKind::OptionSet:
+    llvm_unreachable(
+        "When possible, OptionSet is derived via memberwise init synthesis");
+  }
+  llvm::errs() << "Could not derive protocol requirement for "
+               << derived.Nominal->getName() << ": " << protocol->getName()
+               << "\n";
+  return nullptr;
+}
+#endif
 
 /// Attempt to resolve a witness via derivation.
 ResolveWitnessResult ConformanceChecker::resolveWitnessViaDerivation(

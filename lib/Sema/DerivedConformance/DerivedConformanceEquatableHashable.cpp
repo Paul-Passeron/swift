@@ -18,19 +18,30 @@
 #include "CodeSynthesis.h"
 #include "DerivedConformance.h"
 #include "DerivedConformanceMacros.h"
+#include "TypeCheckMacros.h"
 #include "TypeChecker.h"
 #include "swift/AST/ArgumentList.h"
+#include "swift/AST/Attr.h"
 #include "swift/AST/Decl.h"
+#include "swift/AST/Evaluator.h"
 #include "swift/AST/Expr.h"
+#include "swift/AST/FreestandingMacroExpansion.h"
+#include "swift/AST/Identifier.h"
+#include "swift/AST/KnownProtocols.h"
 #include "swift/AST/Module.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/Pattern.h"
 #include "swift/AST/ProtocolConformance.h"
 #include "swift/AST/Stmt.h"
+#include "swift/AST/Type.h"
+#include "swift/AST/TypeCheckRequests.h"
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
+#include "swift/Basic/OptionSet.h"
+#include "swift/Sema/IDETypeChecking.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cstdlib>
 #include <optional>
 
@@ -554,6 +565,75 @@ static CustomAttr *createEquatableMacroAttr(DerivedConformance &derived,
       C, atLoc, typeExpr, CustomAttrOwner(static_cast<Decl *>(eqDecl)),
       new (C) CustomAttributeInitializer(eqDecl->getDeclContext()), argList);
   return attr;
+}
+
+static CustomAttr *createEquatableMacroDeclAttr(DerivedConformance &derived,
+                                                TypeDecl *sd) {
+  ASTContext &C = derived.Context;
+  // auto endLoc = derived.ConformanceDecl->getEndLoc();
+  // auto atLoc =
+  //     endLoc.isValid() ? endLoc : derived.ConformanceDecl->getStartLoc();
+
+  auto atLoc = derived.ConformanceDecl->getStartLoc();
+
+  auto declName = DeclName(C.getIdentifier("EquatableDeclMacro"));
+  auto declNameRef = DeclNameRef(C, Identifier(), declName);
+
+  auto typeRepr =
+      UnqualifiedIdentTypeRepr::create(C, DeclNameLoc(atLoc), declNameRef);
+
+  auto *typeExpr = new (C) TypeExpr(typeRepr);
+
+  // Note: We have to use this constructor to have locs on the parenthesis
+  // otherwise an empty arg list will cause a crash during the expansion
+  // of the macro
+  auto argList = ArgumentList::create(C, atLoc, ArrayRef<Argument>(), atLoc,
+                                      std::nullopt, /*isImplicit=*/true);
+  auto *attr = CustomAttr::create(
+      C, atLoc, typeExpr, CustomAttrOwner(static_cast<Decl *>(sd)),
+      new (C) CustomAttributeInitializer(sd->getDeclContext()), argList, true);
+  return attr;
+}
+
+ValueDecl *
+DerivedConformance::deriveEquatableWithMacro(ValueDecl *requirement) {
+  if (requirement->getBaseName() == "==") {
+    auto *dc = this->getConformanceContext();
+    auto &C = dc->getASTContext();
+    auto atLoc = requirement->getStartLoc();
+    atLoc = atLoc.isValid() ? atLoc : requirement->getEndLoc();
+    atLoc = atLoc.isValid() ? atLoc : Nominal->getBraces().Start;
+    atLoc = atLoc.isValid()
+                ? atLoc
+                : Nominal->getBraces().End.getAdvancedLocOrInvalid(-1);
+    atLoc = atLoc.isValid() ? atLoc : Nominal->getBraces().End;
+
+    auto declName = DeclName(C.getIdentifier("EquatableDeclMacro"));
+    auto declNameRef = DeclNameRef(C, Identifier(), declName);
+    auto argList =
+        ArgumentList::createImplicit(C, atLoc, ArrayRef<Argument>(), atLoc);
+    MacroExpansionDecl *free = MacroExpansionDecl::create(
+        dc, atLoc, declNameRef, DeclNameLoc(atLoc), SourceLoc(),
+        ArrayRef<TypeRepr *>(), SourceLoc(), argList);
+    ValueDecl *val = nullptr;
+    free->setImplicit(true);
+    free->setDeclContext(dc);
+    llvm::errs() << static_cast<const void *>(free->getDeclContext()) << "\n";
+    this->addMemberToConformanceContext(dyn_cast<Decl>(free), nullptr);
+
+    free->forEachExpandedNode([&](ASTNode node) {
+      auto *decl = node.dyn_cast<Decl *>();
+      if (decl) {
+        val = dyn_cast<ValueDecl>(decl);
+      }
+      if (!val) {
+        llvm_unreachable("val is nullptr: MISSING WITNESS");
+      }
+    });
+    return val;
+  }
+  requirement->diagnose(diag::broken_equatable_requirement);
+  return nullptr;
 }
 
 ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {

@@ -144,3 +144,100 @@ func expandEquatableEnumMacroBody(
     switchExpr
   }
 }
+
+func expandEquatableDeclMacroBody(isNotStruct isEnum: Bool) -> FunctionDeclSyntax {
+  let signature = FunctionSignatureSyntax(
+    parameterClause: FunctionParameterClauseSyntax {
+      "_ a: Self, _ b: Self"
+    },
+    returnClause: ReturnClauseSyntax(type: IdentifierTypeSyntax(name: "Bool"))
+  )
+  let equatable_attr =
+    if isEnum {
+      "@EquatableEnumMacro\n" as AttributeSyntax
+    } else {
+      "@EquatableStructMacro\n" as AttributeSyntax
+    }
+  let attributes: [AttributeSyntax] = [
+    "@_implements(Equatable, ==(_:_:))\n" as AttributeSyntax,
+    equatable_attr,
+  ]
+  return FunctionDeclSyntax(
+    attributes: AttributeListSyntax {
+      for a in attributes { a }
+    },
+    modifiers: DeclModifierListSyntax { [DeclModifierSyntax(name: .identifier(" static "))] },
+    name: .identifier(" __derived_equals"),
+    signature: signature,
+  )
+}
+
+func stringToBuffer(
+  _ str: String,
+  outBufferPtr: UnsafeMutablePointer<UnsafePointer<CChar>?>,
+  outBufferLen: UnsafeMutablePointer<Int>
+) {
+  let buffer = UnsafeMutableRawPointer.allocate(byteCount: str.utf8.count, alignment: 8)
+  str.withCString({
+    buffer.copyMemory(from: $0, byteCount: str.utf8.count + 1)
+  })
+  outBufferPtr.initialize(to: UnsafeRawPointer(buffer).assumingMemoryBound(to: CChar.self))
+  outBufferLen.initialize(to: str.utf8.count)
+}
+
+@_cdecl("swift_ASTGen_expandEquatableStructMacro")
+public func expandEquatableStructMacro(
+  propertyNamesPtr: UnsafePointer<UnsafePointer<CChar>?>,
+  count: Int,
+  outBufferPtr: UnsafeMutablePointer<UnsafePointer<CChar>?>,
+  outBufferLen: UnsafeMutablePointer<Int>
+) -> Bool {
+  let names = (0..<count).compactMap {
+    propertyNamesPtr[$0].map { String(cString: $0) }
+  }
+  let syntax = expandEquatableStructMacroBody(propertyNames: names)
+  let text = syntax.description
+  stringToBuffer(text, outBufferPtr: outBufferPtr, outBufferLen: outBufferLen)
+  return true
+}
+
+public struct EnumCaseInfo {
+  let caseName: UnsafePointer<CChar>
+  let argLabels: UnsafePointer<UnsafePointer<CChar>?>
+  let argCount: Int
+  let isUnavailable: Bool
+}
+
+@_cdecl("swift_ASTGen_expandEquatableEnumMacro")
+public func expandEquatableEnumMacro(
+  caseInfos: UnsafeRawPointer,
+  caseCount: Int,
+  outBufferPtr: UnsafeMutablePointer<UnsafePointer<CChar>?>,
+  outBufferLen: UnsafeMutablePointer<Int>
+) -> Bool {
+  let caseInfos = caseInfos.assumingMemoryBound(to: EnumCaseInfo.self)
+  let cases = (0..<caseCount).map { idx in
+    let infos = caseInfos[idx]
+    let labels: [String?] = (0..<Int(infos.argCount)).map { lblIdx in
+      let lbl = infos.argLabels[lblIdx]
+      return lbl.map { String.init(cString: $0) }
+    }
+    return (caseName: String(cString: infos.caseName), argLabels: labels, isUnavailable: infos.isUnavailable)
+  }
+  let syntax = expandEquatableEnumMacroBody(cases: cases)
+  let text = syntax.description
+  stringToBuffer(text, outBufferPtr: outBufferPtr, outBufferLen: outBufferLen)
+  return true
+}
+
+@_cdecl("swift_ASTGen_expandEquatableDeclMacro")
+public func expandEquatableDeclMacro(
+  isNotStruct isEnum: Bool,
+  outBufferPtr: UnsafeMutablePointer<UnsafePointer<CChar>?>,
+  outBufferLen: UnsafeMutablePointer<Int>
+) -> Bool {
+  let syntax = expandEquatableDeclMacroBody(isNotStruct: isEnum)
+  let text = syntax.description
+  stringToBuffer(text, outBufferPtr: outBufferPtr, outBufferLen: outBufferLen)
+  return true
+}

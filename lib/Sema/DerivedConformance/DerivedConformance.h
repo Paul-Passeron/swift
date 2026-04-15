@@ -75,7 +75,7 @@ public:
   /// Add \c children as members of the context that declares the conformance.
   void addMembersToConformanceContext(ArrayRef<Decl *> children);
   /// Add \c member right after the \c hint member which may be the tail
-  void addMemberToConformanceContext(Decl *member, Decl* hint);
+  void addMemberToConformanceContext(Decl *member, Decl *hint);
   /// Add \c member in front of any other existing members
   void addMemberToConformanceContext(Decl *member, bool insertAtHead);
 
@@ -101,7 +101,8 @@ public:
   ///
   /// \return True if the type can implicitly derive a conformance for the
   /// given protocol.
-  static bool derivesProtocolConformance(NormalProtocolConformance *conformance);
+  static bool
+  derivesProtocolConformance(NormalProtocolConformance *conformance);
 
   /// Diagnose problems, if any, preventing automatic derivation of protocol
   /// requirements
@@ -241,8 +242,9 @@ public:
   ///
   /// \param nominal The nominal type for which we would like to diagnose
   /// derivation failures
-  static void tryDiagnoseFailedDistributedActorDerivation(DeclContext *DC,
-                                                    NominalTypeDecl *nominal);
+  static void
+  tryDiagnoseFailedDistributedActorDerivation(DeclContext *DC,
+                                              NominalTypeDecl *nominal);
 
   /// Diagnose problems, if any, preventing automatic derivation of
   /// DistributedActor requirements
@@ -268,6 +270,8 @@ public:
   ///
   /// \returns the derived member, which will also be added to the type.
   ValueDecl *deriveEquatable(ValueDecl *requirement);
+
+  ValueDecl *deriveEquatableWithMacro(ValueDecl *requirement);
 
   /// Diagnose problems, if any, preventing automatic derivation of Equatable
   /// requirements
@@ -326,7 +330,8 @@ public:
   /// \returns the derived member, which will also be added to the type.
   ValueDecl *deriveDecodable(ValueDecl *requirement);
 
-  /// Whether we can derive the given DistributedActor requirement in the given context.
+  /// Whether we can derive the given DistributedActor requirement in the given
+  /// context.
   static bool canDeriveDistributedActor(NominalTypeDecl *nominal,
                                         DeclContext *dc);
 
@@ -347,8 +352,8 @@ public:
   /// Derive a DistributedActor associated type for a distributed actor.
   ///
   /// \returns the derived type member, which will also be added to the type.
-  std::pair<Type, TypeDecl *> deriveDistributedActor(
-      AssociatedTypeDecl *assocType);
+  std::pair<Type, TypeDecl *>
+  deriveDistributedActor(AssociatedTypeDecl *assocType);
 
   /// Determine if \c Actor can be derived for the given type.
   static bool canDeriveActor(DeclContext *DC, NominalTypeDecl *NTD);
@@ -374,8 +379,7 @@ public:
   static DeclRefExpr *createSelfDeclRef(AbstractFunctionDecl *fn);
 
   /// Build a builtin call.  By default, the call is assumed not to throw.
-  static CallExpr *createBuiltinCall(ASTContext &ctx,
-                                     BuiltinValueKind builtin,
+  static CallExpr *createBuiltinCall(ASTContext &ctx, BuiltinValueKind builtin,
                                      ArrayRef<Type> typeArgs,
                                      ArrayRef<Expr *> args);
 
