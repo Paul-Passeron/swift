@@ -24,8 +24,8 @@ add_pure_swift_host_library(swiftASTGen STATIC CXX_INTEROP
   TypeAttrs.swift
   Types.swift
   WarningGroupBehaviorConfiguration.swift
-  DeriveEquatable.swift
-  
+  DeriveEquatableHashable.swift
+
   DEPENDENCIES
     swiftAST
   SWIFT_DEPENDENCIES
