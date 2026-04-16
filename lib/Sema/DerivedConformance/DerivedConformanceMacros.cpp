@@ -64,12 +64,10 @@ static std::string getUniqueASTGenBufferName() {
 
 std::unique_ptr<llvm::MemoryBuffer>
 swift::getBufferForAstGenMacro(char *outBuffer, size_t outLen) {
-  if (!outBuffer) {
-    return nullptr;
-  }
-  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(StringRef(outBuffer, outLen),
-                                              getUniqueASTGenBufferName());
-  std::free(outBuffer);
+  auto buffer = llvm::MemoryBuffer::getMemBufferCopy(
+      StringRef(outBuffer, outLen), getUniqueASTGenBufferName());
+  if (outBuffer)
+    std::free(outBuffer);
   return buffer;
 }
 

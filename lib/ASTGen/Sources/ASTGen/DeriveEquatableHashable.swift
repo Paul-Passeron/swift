@@ -177,7 +177,7 @@ func stringToBuffer(
   outBufferPtr: UnsafeMutablePointer<UnsafePointer<CChar>?>,
   outBufferLen: UnsafeMutablePointer<Int>
 ) {
-  let buffer = UnsafeMutableRawPointer.allocate(byteCount: str.utf8.count, alignment: 8)
+  let buffer = UnsafeMutableRawPointer.allocate(byteCount: str.utf8.count + 1, alignment: 8)
   str.withCString({
     buffer.copyMemory(from: $0, byteCount: str.utf8.count + 1)
   })
