@@ -104,7 +104,7 @@ func expandEquatableEnumMacroBody(
   -> CodeBlockSyntax
 {
   if cases.isEmpty {
-    return CodeBlockSyntax { "return true" }
+    return CodeBlockSyntax {}
   }
 
   if hasNoAssociatedValues(cases) {

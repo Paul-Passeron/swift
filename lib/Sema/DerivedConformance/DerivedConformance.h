@@ -271,8 +271,6 @@ public:
   /// \returns the derived member, which will also be added to the type.
   ValueDecl *deriveEquatable(ValueDecl *requirement);
 
-  ValueDecl *deriveEquatableWithMacro(ValueDecl *requirement);
-
   /// Diagnose problems, if any, preventing automatic derivation of Equatable
   /// requirements
   ///

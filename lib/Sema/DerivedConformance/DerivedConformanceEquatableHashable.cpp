@@ -474,15 +474,23 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
 #else
 
 static SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived,
-                                       ValueDecl *requirement) {
+                                              ValueDecl *requirement) {
   auto atLoc = derived.Conformance->getLoc();
-  atLoc = atLoc.isValid() ? atLoc : requirement->getStartLoc();
-  atLoc = atLoc.isValid() ? atLoc : requirement->getEndLoc();
-  atLoc = atLoc.isValid() ? atLoc : derived.Nominal->getBraces().Start;
-  atLoc = atLoc.isValid()
-              ? atLoc
-              : derived.Nominal->getBraces().End.getAdvancedLocOrInvalid(-1);
-  atLoc = atLoc.isValid() ? atLoc : derived.Nominal->getBraces().End;
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = requirement->getStartLoc();
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = requirement->getEndLoc();
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = derived.Nominal->getBraces().Start;
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = derived.Nominal->getBraces().End;
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = derived.Nominal->getBraces().End.getAdvancedLocOrInvalid(-1);
   assert(atLoc.isValid() && "Conformance loc is invalid");
   return atLoc;
 }
@@ -491,6 +499,12 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   if (requirement->getBaseName() == "==") {
     auto *dc = this->getConformanceContext();
     auto &C = dc->getASTContext();
+
+    if (!C.getEqualIntDecl()) {
+      ConformanceDecl->diagnose(diag::no_equal_overload_for_int);
+      return nullptr;
+    }
+
     auto atLoc = getValidSourceLocForImplicit(*this, requirement);
     auto declName = DeclName(C.getIdentifier("EquatableDeclMacro"));
     auto declNameRef = DeclNameRef(C, Identifier(), declName);
@@ -505,14 +519,12 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
     // Contains a single node
     free->forEachExpandedNode([&](ASTNode node) {
       auto *decl = node.dyn_cast<Decl *>();
-      if (decl) {
-        auto *fdecl = dyn_cast<FuncDecl>(decl);
-        assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
-        val = static_cast<ValueDecl *>(fdecl);
-      }
-      if (!val) {
-        llvm_unreachable("val is nullptr: MISSING WITNESS");
-      }
+      assert(decl && "macro expansion node is not a Decl");
+      auto *fdecl = dyn_cast<FuncDecl>(decl);
+      assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
+      fdecl->setUserAccessible(false);
+      addNonIsolatedToSynthesized(*this, fdecl);
+      val = static_cast<ValueDecl *>(fdecl);
     });
     return val;
   }
@@ -520,37 +532,6 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   return nullptr;
 }
 
-// [[deprecated("Use deriveEquatableWithMacro instead")]]
-// ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
-//   // if (checkAndDiagnoseDisallowedContext(requirement))
-//   //   return nullptr;
-
-//   // auto *eqDecl = createEqDeclForTypeDecl(*this, Nominal);
-
-//   // // Build the necessary decl.
-//   // if (requirement->getBaseName() == "==") {
-//   //   CustomAttr *macroAttr;
-//   //   if (auto *ed = dyn_cast<EnumDecl>(Nominal)) {
-//   //     macroAttr =
-//   //         createEquatableMacroAttr(*this, eqDecl, ed,
-//   "EquatableEnumMacro");
-//   //   } else if (auto *sd = dyn_cast<StructDecl>(Nominal)) {
-//   //     macroAttr =
-//   //         createEquatableMacroAttr(*this, eqDecl, sd,
-//   "EquatableStructMacro");
-//   //   } else {
-//   //     llvm_unreachable("todo");
-//   //   }
-//   //   eqDecl->addAttribute(macroAttr);
-//   //   eqDecl->copyFormalAccessFrom(this->Nominal,
-//   //                                /*sourceIsParentContext*/ true);
-//   //   // Add the operator to the parent scope.
-//   //   this->addMembersToConformanceContext({eqDecl});
-//   //   return eqDecl;
-//   // }
-//   // requirement->diagnose(diag::broken_equatable_requirement);
-//   return nullptr;
-// }
 #endif // USE_MACROS
 
 void DerivedConformance::tryDiagnoseFailedEquatableDerivation(
@@ -1105,37 +1086,34 @@ std::unique_ptr<llvm::MemoryBuffer> swift::evaluateEquatableEnumMacroBuffer(
   llvm::BumpPtrAllocator alloc; // Bump allocator for strings
   SmallVector<EnumCaseInfo, 6> cases;
 
-  for (const auto *the_case : enum_decl->getAllCases()) {
-    // TODO: Handle unavailable cases
-    for (const auto *elt : the_case->getElements()) {
-      SmallVector<const char *, 6> *argLabels =
-          new (alloc) SmallVector<const char *, 6>();
-      const char *name =
-          cloneString(alloc, elt->getBaseIdentifier().str().data());
-      if (elt->hasAssociatedValues()) {
-        auto payloadType = elt->getPayloadInterfaceType();
-        if (auto tupleType = payloadType->getAs<TupleType>()) {
-          for (auto tupleElement : tupleType->getElements()) {
-            if (tupleElement.hasName()) {
-              argLabels->emplace_back(
-                  cloneString(alloc, tupleElement.getName().str().data()));
-            } else {
-              argLabels->emplace_back(nullptr);
-            }
+  for (const auto *elt : enum_decl->getAllElements()) {
+    SmallVector<const char *, 6> *argLabels =
+        new (alloc) SmallVector<const char *, 6>();
+    const char *name =
+        cloneString(alloc, elt->getBaseIdentifier().str().data());
+    if (elt->hasAssociatedValues()) {
+      auto payloadType = elt->getPayloadInterfaceType();
+      if (auto tupleType = payloadType->getAs<TupleType>()) {
+        for (auto tupleElement : tupleType->getElements()) {
+          if (tupleElement.hasName()) {
+            argLabels->emplace_back(
+                cloneString(alloc, tupleElement.getName().str().data()));
+          } else {
+            argLabels->emplace_back(nullptr);
           }
-        } else {
-          // TODO: is this right ?
-          argLabels->emplace_back(nullptr);
         }
+      } else {
+        // TODO: is this right ?
+        argLabels->emplace_back(nullptr);
       }
-      bool isUnavailable = elt->isUnreachableAtRuntime() &&
-                           !elt->getParentEnum()->isUnreachableAtRuntime() &&
-                           ctx.getDiagnoseUnavailableCodeReached() != nullptr;
-      cases.emplace_back((EnumCaseInfo){.caseName = name,
-                                        .argLabels = argLabels->data(),
-                                        .argCount = argLabels->size(),
-                                        .isUnavailable = isUnavailable});
     }
+    bool isUnavailable = elt->isUnreachableAtRuntime() &&
+                         !elt->getParentEnum()->isUnreachableAtRuntime() &&
+                         ctx.getDiagnoseUnavailableCodeReached() != nullptr;
+    cases.emplace_back((EnumCaseInfo){.caseName = name,
+                                      .argLabels = argLabels->data(),
+                                      .argCount = argLabels->size(),
+                                      .isUnavailable = isUnavailable});
   }
 
   char *outBuffer;
