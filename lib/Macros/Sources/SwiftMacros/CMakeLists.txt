@@ -13,6 +13,7 @@
 add_swift_macro_library(SwiftMacros
   OptionSetMacro.swift
   DebugDescriptionMacro.swift
+  DerivedConformance.swift
   DeriveEquatableHashable.swift
   DistributedResolvableMacro.swift
   SyntaxExtensions.swift
