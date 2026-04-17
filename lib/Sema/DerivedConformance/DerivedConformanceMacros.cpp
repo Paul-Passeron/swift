@@ -57,7 +57,7 @@ swift::evaluateASTGenMacroBuffer(ASTContext &ctx, MacroDecl *macro, Decl *decl,
   return nullptr;
 }
 
-static std::string getUniqueASTGenBufferName() {
+std::string swift::getUniqueASTGenBufferName() {
   static int counter = 0;
   return "__ast_gen_macro_expansion__" + std::to_string(counter++);
 }
