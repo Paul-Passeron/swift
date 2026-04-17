@@ -18,7 +18,10 @@
 #ifndef SWIFT_SEMA_DERIVEDCONFORMANCE_DERIVEDCONFORMANCEMACRO_H
 #define SWIFT_SEMA_DERIVEDCONFORMANCE_DERIVEDCONFORMANCEMACRO_H
 
+#include "swift/AST/ASTBridging.h"
 #include "swift/AST/Decl.h"
+#include "swift/AST/DiagnosticEngine.h"
+#include "swift/Basic/BasicBridging.h"
 namespace swift {
 
 bool isAstGenMacro(MacroDecl *macro);
@@ -27,11 +30,11 @@ std::unique_ptr<llvm::MemoryBuffer> evaluateASTGenMacroBuffer(ASTContext &ctx,
                                                               MacroDecl *macro,
                                                               Decl *decl,
                                                               CustomAttr *attr);
-std::unique_ptr<llvm::MemoryBuffer>
-getBufferForAstGenMacro(char *outBuffer, size_t outLen);
+std::unique_ptr<llvm::MemoryBuffer> getBufferForAstGenMacro(char *outBuffer,
+                                                            size_t outLen);
 
 const char *cloneString(llvm::BumpPtrAllocator &allocator, StringRef str);
-
+std::string getUniqueASTGenBufferName();
 // ==== Equatable =============================================================
 
 struct EnumCaseInfo {
@@ -67,6 +70,11 @@ extern "C" bool swift_ASTGen_expandEquatableEnumMacro(void *caseInfos,
 extern "C" bool swift_ASTGen_expandEquatableDeclMacro(
     bool isEnum, // False means the type is a struct
     char **outBufferPtr, size_t *outBufferLen);
+
+extern "C" bool swift_Macros_expandFreestandingMacroSynthetic(
+    BridgedASTContext cContext, const void *macroPtr, const char *discriminator,
+    uint8_t rawMacroRole, BridgedStringRef macroNameText,
+    BridgedStringRef argumentListText, BridgedStringRef *expandedSourceOutPtr);
 
 // ==== /Equatable ============================================================
 

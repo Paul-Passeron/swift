@@ -1691,8 +1691,12 @@ DiagnosticEngine::getGeneratedSourceBufferNotes(SourceLoc loc) {
     currentLoc = expansionNode.getStartLoc();
     if (currentLoc.isInvalid())
       return childNotes;
-
-    currentBufferID = SourceMgr.findBufferContainingLoc(currentLoc);
+    auto nextBufferID = SourceMgr.findBufferContainingLoc(currentLoc);
+    if (nextBufferID == currentBufferID) {
+      // Synthetic expansion whose decl loc is in its own buffer — break the cycle.
+      return childNotes;
+    }
+    currentBufferID = nextBufferID;
   } while (true);
 }
 

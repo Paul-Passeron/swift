@@ -34,6 +34,7 @@
 #include "swift/AST/PluginLoader.h"
 #include "swift/AST/PluginRegistry.h"
 #include "swift/AST/PrettyStackTrace.h"
+#include "swift/AST/PrintOptions.h"
 #include "swift/AST/SourceFile.h"
 #include "swift/AST/Type.h"
 #include "swift/AST/TypeCheckRequests.h"
@@ -41,6 +42,7 @@
 #include "swift/Basic/BasicBridging.h"
 #include "swift/Basic/Defer.h"
 #include "swift/Basic/Lazy.h"
+#include "swift/Basic/SourceLoc.h"
 #include "swift/Basic/SourceManager.h"
 #include "swift/Basic/StringExtras.h"
 #include "swift/Bridging/ASTGen.h"
@@ -49,6 +51,7 @@
 #include "swift/Demangling/Demangler.h"
 #include "swift/Demangling/ManglingMacros.h"
 #include "swift/Parse/Lexer.h"
+#include "swift/SIL/SILBridging.h"
 #include "swift/Sema/ConstraintSystem.h"
 #include "swift/Sema/IDETypeChecking.h"
 #include "swift/Subsystems.h"
@@ -887,6 +890,17 @@ static CharSourceRange getPreambleMacroOriginalRange(AbstractFunctionDecl *fn) {
   return CharSourceRange(insertionLoc, 0);
 }
 
+static CharSourceRange makeRangeOrPoint(SourceManager &sm, SourceLoc start,
+                                        SourceLoc end) {
+  if (!start.isValid())
+    return CharSourceRange();
+  if (end.isValid() &&
+      sm.findBufferContainingLoc(start) == sm.findBufferContainingLoc(end)) {
+    return CharSourceRange(sm, start, end);
+  }
+  return CharSourceRange(start, /*length=*/0);
+}
+
 static CharSourceRange getExpansionInsertionRange(MacroRole role,
                                                   ASTNode target,
                                                   SourceManager &sourceMgr) {
@@ -1000,8 +1014,9 @@ static CharSourceRange getExpansionInsertionRange(MacroRole role,
   case MacroRole::Expression:
   case MacroRole::Declaration:
   case MacroRole::CodeItem:
-    return Lexer::getCharSourceRangeFromSourceRange(sourceMgr,
-                                                    target.getSourceRange());
+
+    return makeRangeOrPoint(sourceMgr, target.getSourceRange().Start,
+                            target.getSourceRange().End);
   }
   llvm_unreachable("unhandled MacroRole");
 }
@@ -1131,26 +1146,21 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
   SourceLoc loc = expansion->getPoundLoc();
   auto moduleDecl = dc->getParentModule();
   MacroDecl *macro = cast<MacroDecl>(expansion->getMacroRef().getDecl());
-  // if (isAstGenMacro(macro)) {
-  //   return evaluateASTGenMacro(
-  //       ctx, macro, expansion->getASTNode().dyn_cast<Decl *>(), nullptr);
-  // }
+  auto macroDef = macro->getDefinition();
 
-  auto sourceFile = moduleDecl->getSourceFileContainingLocation(loc);
-  if (!sourceFile) {
-    llvm::errs() << "[evaluateFreestandingMacro]: no source file for loc ";
-    loc.print(llvm::errs(), ctx.SourceMgr);
-    llvm::errs() << "\n";
-    return nullptr;
-  }
+  auto *expDecl = dyn_cast<MacroExpansionDecl>(expansion);
+  bool isSynthetic = expDecl && expDecl->isImplicit();
   auto macroRoles = macro->getMacroRoles();
+  auto sourceFile = moduleDecl->getSourceFileContainingLocation(loc);
+
   assert(macroRoles.contains(MacroRole::Expression) ||
          macroRoles.contains(MacroRole::Declaration) ||
          macroRoles.contains(MacroRole::CodeItem));
 
-  if (isFromExpansionOfMacro(sourceFile, macro, MacroRole::Expression) ||
-      isFromExpansionOfMacro(sourceFile, macro, MacroRole::Declaration) ||
-      isFromExpansionOfMacro(sourceFile, macro, MacroRole::CodeItem)) {
+  if (sourceFile &&
+      (isFromExpansionOfMacro(sourceFile, macro, MacroRole::Expression) ||
+       isFromExpansionOfMacro(sourceFile, macro, MacroRole::Declaration) ||
+       isFromExpansionOfMacro(sourceFile, macro, MacroRole::CodeItem))) {
     ctx.Diags.diagnose(loc, diag::macro_recursive, macro->getName());
     return nullptr;
   }
@@ -1170,50 +1180,15 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
 #endif
   });
 
-  auto macroDef = macro->getDefinition();
-  switch (macroDef.kind) {
-  case MacroDefinition::Kind::Undefined:
-  case MacroDefinition::Kind::Invalid:
-    // Already diagnosed as an error elsewhere.
-    return nullptr;
-
-  case MacroDefinition::Kind::Builtin: {
-    switch (macroDef.getBuiltinKind()) {
-    case BuiltinMacroKind::ExternalMacro:
-      ctx.Diags.diagnose(loc, diag::external_macro_outside_macro_definition);
-      return nullptr;
-
-    case BuiltinMacroKind::IsolationMacro: {
-      // Create a buffer with "nil" plus a bunch of scratch space. This
-      // will be populated much later.
-      std::string scratchSpace = "nil";
-      scratchSpace.append(125, ' ');
-      evaluatedSource = llvm::MemoryBuffer::getMemBufferCopy(
-          scratchSpace, adjustMacroExpansionBufferName(*discriminator));
-      break;
-    }
-    case BuiltinMacroKind::DerivedConformanceMacro:
-      evaluatedSource = evaluateASTGenMacroBuffer(
-          ctx, macro, expansion->getASTNode().dyn_cast<Decl *>(), nullptr);
-    }
-    break;
-  }
-
-  case MacroDefinition::Kind::Expanded: {
-    // Expand the definition with the given arguments.
-    auto result = expandMacroDefinition(
-        macroDef.getExpanded(), macro,
-        expansion->getMacroRef().getSubstitutions(), expansion->getArgs());
-    evaluatedSource = llvm::MemoryBuffer::getMemBufferCopy(
-        result, adjustMacroExpansionBufferName(*discriminator));
-    break;
-  }
-
-  case MacroDefinition::Kind::External: {
-    // Retrieve the external definition of the macro.
+  if (isSynthetic && macroDef.kind == MacroDefinition::Kind::External) {
     auto external = macroDef.getExternalMacro();
     ExternalMacroDefinitionRequest request{&ctx, external.moduleName,
                                            external.macroTypeName};
+    MacroRole macroRole =
+        macroRoles.contains(MacroRole::Expression)    ? MacroRole::Expression
+        : macroRoles.contains(MacroRole::Declaration) ? MacroRole::Declaration
+                                                      : MacroRole::CodeItem;
+
     auto externalDef =
         evaluateOrDefault(ctx.evaluator, request,
                           ExternalMacroDefinition::error("request error"));
@@ -1225,53 +1200,133 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
       macro->diagnose(diag::decl_declared_here, macro);
       return nullptr;
     }
-
-    // Code item macros require `CodeItemMacros` feature flag.
-    if (macroRoles.contains(MacroRole::CodeItem) &&
-        !ctx.LangOpts.hasFeature(Feature::CodeItemMacros)) {
-      ctx.Diags.diagnose(loc, diag::macro_experimental, "code item",
-                         "CodeItemMacros");
-      return nullptr;
+    std::string argListStr = "";
+    if (auto attrs = expansion->getArgs()) {
+      auto SR = attrs->getSourceRange();
+      auto CSR =
+          CharSourceRange(ctx.SourceMgr, SR.Start.getAdvancedLoc(1), SR.End);
+      argListStr = CSR.str();
     }
 
-#if SWIFT_BUILD_SWIFT_SYNTAX
-    // Only one freestanding macro role is permitted, so look at the roles to
-    // figure out which one to use.
-    MacroRole macroRole =
-        macroRoles.contains(MacroRole::Expression)    ? MacroRole::Expression
-        : macroRoles.contains(MacroRole::Declaration) ? MacroRole::Declaration
-                                                      : MacroRole::CodeItem;
-
-    PrettyStackTraceFreestandingMacroExpansion debugStack(
-        "expanding freestanding macro", expansion);
-    LLVM_DEBUG(llvm::dbgs() << "\nexpanding macro:\n";
-               macro->print(llvm::dbgs(), PrintOptions::printEverything());
-               llvm::dbgs() << "\n";);
-
-    // Builtin macros are handled via ASTGen.
-    auto *astGenSourceFile = sourceFile->getExportedSourceFile();
-    if (!astGenSourceFile)
-      return nullptr;
+    std::string macroName =
+        expansion->getMacroName().getBaseIdentifier().str().str();
 
     BridgedStringRef evaluatedSourceOut{nullptr, 0};
-    assert(!externalDef.isError());
-    swift_Macros_expandFreestandingMacro(
-        ctx, externalDef.get(), discriminator->c_str(),
-        getRawMacroRole(macroRole), astGenSourceFile,
-        expansion->getSourceRange().Start.getOpaquePointerValue(),
-        &evaluatedSourceOut);
+
+    swift_Macros_expandFreestandingMacroSynthetic(
+        BridgedASTContext(ctx), externalDef.get(), discriminatorStr.begin(),
+        getRawMacroRole(macroRole), BridgedStringRef(macroName),
+        BridgedStringRef(argListStr), &evaluatedSourceOut);
+
     if (!evaluatedSourceOut.unbridged().data())
       return nullptr;
     evaluatedSource = llvm::MemoryBuffer::getMemBufferCopy(
         evaluatedSourceOut.unbridged(),
         adjustMacroExpansionBufferName(*discriminator));
     swift_ASTGen_freeBridgedString(evaluatedSourceOut);
-    break;
+  } else {
+    switch (macroDef.kind) {
+    case MacroDefinition::Kind::Undefined:
+    case MacroDefinition::Kind::Invalid:
+      // Already diagnosed as an error elsewhere.
+      return nullptr;
+
+    case MacroDefinition::Kind::Builtin: {
+      switch (macroDef.getBuiltinKind()) {
+      case BuiltinMacroKind::ExternalMacro:
+        ctx.Diags.diagnose(loc, diag::external_macro_outside_macro_definition);
+        return nullptr;
+
+      case BuiltinMacroKind::IsolationMacro: {
+        // Create a buffer with "nil" plus a bunch of scratch space. This
+        // will be populated much later.
+        std::string scratchSpace = "nil";
+        scratchSpace.append(125, ' ');
+        evaluatedSource = llvm::MemoryBuffer::getMemBufferCopy(
+            scratchSpace, adjustMacroExpansionBufferName(*discriminator));
+        break;
+      }
+      case BuiltinMacroKind::DerivedConformanceMacro:
+        evaluatedSource = evaluateASTGenMacroBuffer(
+            ctx, macro, expansion->getASTNode().dyn_cast<Decl *>(), nullptr);
+      }
+      break;
+    }
+
+    case MacroDefinition::Kind::Expanded: {
+      // Expand the definition with the given arguments.
+      auto result = expandMacroDefinition(
+          macroDef.getExpanded(), macro,
+          expansion->getMacroRef().getSubstitutions(), expansion->getArgs());
+      evaluatedSource = llvm::MemoryBuffer::getMemBufferCopy(
+          result, adjustMacroExpansionBufferName(*discriminator));
+      break;
+    }
+
+    case MacroDefinition::Kind::External: {
+      // Retrieve the external definition of the macro.
+      auto external = macroDef.getExternalMacro();
+      ExternalMacroDefinitionRequest request{&ctx, external.moduleName,
+                                             external.macroTypeName};
+      auto externalDef =
+          evaluateOrDefault(ctx.evaluator, request,
+                            ExternalMacroDefinition::error("request error"));
+      if (externalDef.isError()) {
+        ctx.Diags.diagnose(loc, diag::external_macro_not_found,
+                           external.moduleName.str(),
+                           external.macroTypeName.str(), macro->getName(),
+                           externalDef.getErrorMessage());
+        macro->diagnose(diag::decl_declared_here, macro);
+        return nullptr;
+      }
+
+      // Code item macros require `CodeItemMacros` feature flag.
+      if (macroRoles.contains(MacroRole::CodeItem) &&
+          !ctx.LangOpts.hasFeature(Feature::CodeItemMacros)) {
+        ctx.Diags.diagnose(loc, diag::macro_experimental, "code item",
+                           "CodeItemMacros");
+        return nullptr;
+      }
+
+#if SWIFT_BUILD_SWIFT_SYNTAX
+      // Only one freestanding macro role is permitted, so look at the roles to
+      // figure out which one to use.
+      MacroRole macroRole =
+          macroRoles.contains(MacroRole::Expression)    ? MacroRole::Expression
+          : macroRoles.contains(MacroRole::Declaration) ? MacroRole::Declaration
+                                                        : MacroRole::CodeItem;
+
+      PrettyStackTraceFreestandingMacroExpansion debugStack(
+          "expanding freestanding macro", expansion);
+      LLVM_DEBUG(llvm::dbgs() << "\nexpanding macro:\n";
+                 macro->print(llvm::dbgs(), PrintOptions::printEverything());
+                 llvm::dbgs() << "\n";);
+
+      // Builtin macros are handled via ASTGen.
+      auto *astGenSourceFile = sourceFile->getExportedSourceFile();
+      if (!astGenSourceFile)
+        return nullptr;
+
+      BridgedStringRef evaluatedSourceOut{nullptr, 0};
+      assert(!externalDef.isError());
+      swift_Macros_expandFreestandingMacro(
+          ctx, externalDef.get(), discriminator->c_str(),
+          getRawMacroRole(macroRole), astGenSourceFile,
+          expansion->getSourceRange().Start.getOpaquePointerValue(),
+          &evaluatedSourceOut);
+      if (!evaluatedSourceOut.unbridged().data())
+        return nullptr;
+      evaluatedSource = llvm::MemoryBuffer::getMemBufferCopy(
+          evaluatedSourceOut.unbridged(),
+          adjustMacroExpansionBufferName(*discriminator));
+      swift_ASTGen_freeBridgedString(evaluatedSourceOut);
+      break;
 #else
-    ctx.Diags.diagnose(loc, diag::macro_unsupported);
-    return nullptr;
+      ctx.Diags.diagnose(loc, diag::macro_unsupported);
+      return nullptr;
 #endif
-  }
+    }
+    }
   }
 
   return createMacroSourceFile(std::move(evaluatedSource),
@@ -2286,7 +2341,6 @@ ResolveMacroRequest::evaluate(Evaluator &evaluator,
       return ConcreteDeclRef();
     }
   }
-
   auto foundMacros = namelookup::lookupMacros(dc, macroRef.getModuleName(),
                                               macroRef.getMacroName(), roles);
   if (foundMacros.empty()) {

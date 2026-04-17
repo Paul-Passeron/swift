@@ -5019,7 +5019,12 @@ void ASTMangler::appendMacroExpansionContext(
   // we're done.
   if (origDC->isChildContextOf(outerExpansionDC))
     return appendMacroExpansionLoc();
-
+  if (outerExpansionLoc.isValid()) {
+    auto outerBufferID = sourceMgr.findBufferContainingLoc(outerExpansionLoc);
+    if (outerBufferID == bufferID) {
+      return appendMacroExpansionLoc();
+    }
+  }
   // Append our own context and discriminator.
   appendMacroExpansionContext(
       outerExpansionLoc, origDC,

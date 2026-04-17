@@ -803,3 +803,110 @@ extension StaticBuildConfiguration {
     }
   }
 }
+
+public func expandFreestandingMacroSyntheticImpl(
+  cContext: BridgedASTContext,
+  macroPtr: UnsafeRawPointer,
+  discriminatorText: UnsafePointer<CChar>,
+  rawMacroRole: UInt8,
+  macroName: String,
+  argumentList: String,
+) -> String? {
+
+  let expansion: DeclSyntax =
+    """
+    #\(raw: macroName)(\(raw: argumentList))
+    """
+
+  let discriminator = String(cString: discriminatorText)
+  let macroRole = MacroRole(rawMacroRole: rawMacroRole)
+  let macro = macroPtr.assumingMemoryBound(to: ExportedExternalMacro.self).pointee
+
+  let pluginMacroRole: PluginMessage.MacroRole
+  switch macroRole {
+  case .expression: pluginMacroRole = .expression
+  case .declaration: pluginMacroRole = .declaration
+  case .codeItem: pluginMacroRole = .codeItem
+  default: preconditionFailure("unhandled freestanding role")
+  }
+
+  do {
+    let message = HostToPluginMessage.expandFreestandingMacro(
+      macro: .init(moduleName: macro.moduleName, typeName: macro.typeName, name: macroName),
+      macroRole: pluginMacroRole,
+      discriminator: discriminator,
+      syntax: PluginMessage.Syntax(syntax: Syntax(expansion))!,  // no source file
+      lexicalContext: [],
+      staticBuildConfiguration: try cContext.staticBuildConfiguration.asJSON
+    )
+    let result = try macro.plugin.sendMessageAndWait(message)
+    let expandedSource: String?
+    let diagnostics: [PluginMessage.Diagnostic]
+    switch result {
+    case .expandMacroResult(let _expandedSource, let _diagnostics),
+      .expandFreestandingMacroResult(let _expandedSource, let _diagnostics):
+      expandedSource = _expandedSource
+      diagnostics = _diagnostics
+    default:
+      throw PluginError.invalidReponseKind
+    }
+
+    // Process the result.
+    if !diagnostics.isEmpty {
+      let diagEngine = PluginDiagnosticsEngine(cContext: cContext)
+      diagEngine.emit(diagnostics, messageSuffix: " (from macro '\(macroName)')")
+    }
+    return expandedSource
+
+  } catch let error {
+    let srcMgr = SourceManager(cContext: cContext)
+    srcMgr.diagnose(
+      diagnostic: .init(
+        node: Syntax(expansion),
+        // FIXME: This is probably a plugin communication error.
+        // The error might not be relevant as the diagnostic message.
+        message: ASTGenMacroDiagnostic.thrownError(error)
+      ),
+      messageSuffix: " (from macro '\(macroName)')"
+    )
+    return nil
+  }
+}
+
+@_cdecl("swift_Macros_expandFreestandingMacroSynthetic")
+public func expandFreestandingMacroSynthetic(
+  cContext: BridgedASTContext,
+  macroPtr: UnsafeRawPointer,
+  discriminatorText: UnsafePointer<CChar>,
+  rawMacroRole: UInt8,
+  macroNameText: BridgedStringRef,
+  argumentListText: BridgedStringRef,
+  expandedSourceOutPtr: UnsafeMutablePointer<BridgedStringRef>
+) -> Int {
+  let macroName = String(
+    decoding: UnsafeBufferPointer(
+      start: macroNameText.data,
+      count: macroNameText.count
+    ),
+    as: UTF8.self
+  )
+  let argsText = String(
+    decoding: UnsafeBufferPointer(
+      start: argumentListText.data,
+      count: argumentListText.count
+    ),
+    as: UTF8.self
+  )
+  let expandedSource = expandFreestandingMacroSyntheticImpl(
+    cContext: cContext,
+    macroPtr: macroPtr,
+    discriminatorText: discriminatorText,
+    rawMacroRole: rawMacroRole,
+    macroName: macroName,
+    argumentList: argsText
+  )
+  return makeExpansionOutputResult(
+    expandedSource: expandedSource,
+    outputPointer: expandedSourceOutPtr
+  )
+}
