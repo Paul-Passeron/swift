@@ -119,3 +119,40 @@ func decodeExpansion(expansion: FreestandingMacroExpansionSyntax) -> DerivedNomi
     return nil
   }
 }
+
+func argLabelAsStr(lbl: IdentifierPatternSyntax?) -> String {
+  if let lbl = lbl {return "\"\(lbl)\""} else {return "nil"}
+}
+
+extension EnumCaseInfo {
+  func asExprSyntax() -> ExprSyntax {
+    let commaSep = ", "
+    let argLabelsAsStr = "[\(self.argLabels.map(argLabelAsStr).joined(separator: commaSep))]"
+    return
+      """
+      (caseName: \(self.caseName), argLabels: \(raw: argLabelsAsStr), isUnavailable: \(raw: self.isUnavailable))
+      """
+  }
+}
+
+extension DerivedNominalKind {
+  func asExprSyntax() -> ExprSyntax {
+    switch self {
+    case .aStruct(let members):
+      return
+        """
+        .aStruct(members: [
+        \(raw: members.map { member in
+          "    \"\(member)\""}.joined(separator: ",\n"))
+        ])
+        """
+    case .anEnum(let cases):
+      return
+        """
+        .anEnum(cases: [
+          \(raw: cases.map {$0.asExprSyntax().description}.joined(separator: ",\n  "))
+        ])
+        """
+    }
+  }
+}
