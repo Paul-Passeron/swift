@@ -54,14 +54,14 @@ void DerivedConformance::addMembersToConformanceContext(
     IDC->addMember(child);
 }
 
-void DerivedConformance::addMemberToConformanceContext(
-    Decl *member, Decl *hint) {
+void DerivedConformance::addMemberToConformanceContext(Decl *member,
+                                                       Decl *hint) {
   auto IDC = cast<IterableDeclContext>(ConformanceDecl);
   IDC->addMember(member, hint, /*insertAtHead=*/false);
 }
 
-void DerivedConformance::addMemberToConformanceContext(
-    Decl *member, bool insertAtHead) {
+void DerivedConformance::addMemberToConformanceContext(Decl *member,
+                                                       bool insertAtHead) {
   auto IDC = cast<IterableDeclContext>(ConformanceDecl);
   IDC->addMember(member, /*hint=*/nullptr, insertAtHead);
 }
@@ -71,7 +71,7 @@ Type DerivedConformance::getProtocolType() const {
 }
 
 bool DerivedConformance::derivesProtocolConformance(
-      NormalProtocolConformance *Conformance) {
+    NormalProtocolConformance *Conformance) {
   auto *Protocol = Conformance->getProtocol();
 
   const auto derivableKind = Protocol->getKnownDerivableProtocolKind();
@@ -121,48 +121,48 @@ bool DerivedConformance::derivesProtocolConformance(
 
   if (auto *enumDecl = dyn_cast<EnumDecl>(Nominal)) {
     switch (*derivableKind) {
-        // The presence of a raw type is an explicit declaration that
-        // the compiler should derive a RawRepresentable conformance.
-      case KnownDerivableProtocolKind::RawRepresentable:
-        return canDeriveRawRepresentable(DC, Nominal);
+      // The presence of a raw type is an explicit declaration that
+      // the compiler should derive a RawRepresentable conformance.
+    case KnownDerivableProtocolKind::RawRepresentable:
+      return canDeriveRawRepresentable(DC, Nominal);
 
-        // Enums without associated values can implicitly derive Equatable
-        // conformance.
-      case KnownDerivableProtocolKind::Equatable:
-        return canDeriveEquatable(DC, Nominal);
+      // Enums without associated values can implicitly derive Equatable
+      // conformance.
+    case KnownDerivableProtocolKind::Equatable:
+      return canDeriveEquatable(DC, Nominal);
 
-      case KnownDerivableProtocolKind::Comparable:
-        return !enumDecl->hasPotentiallyUnavailableCaseValue()
-            && canDeriveComparable(DC, enumDecl);
+    case KnownDerivableProtocolKind::Comparable:
+      return !enumDecl->hasPotentiallyUnavailableCaseValue() &&
+             canDeriveComparable(DC, enumDecl);
 
-        // "Simple" enums without availability attributes can explicitly derive
-        // a CaseIterable conformance.
-        //
-        // FIXME: Lift the availability restriction.
-      case KnownDerivableProtocolKind::CaseIterable:
-        return !enumDecl->hasPotentiallyUnavailableCaseValue()
-            && enumDecl->hasOnlyCasesWithoutAssociatedValues();
+      // "Simple" enums without availability attributes can explicitly derive
+      // a CaseIterable conformance.
+      //
+      // FIXME: Lift the availability restriction.
+    case KnownDerivableProtocolKind::CaseIterable:
+      return !enumDecl->hasPotentiallyUnavailableCaseValue() &&
+             enumDecl->hasOnlyCasesWithoutAssociatedValues();
 
-        // @objc enums can explicitly derive their _BridgedNSError conformance.
-      case KnownDerivableProtocolKind::BridgedNSError:
-        return enumDecl->isObjC() && enumDecl->hasCases()
-            && enumDecl->hasOnlyCasesWithoutAssociatedValues();
+      // @objc enums can explicitly derive their _BridgedNSError conformance.
+    case KnownDerivableProtocolKind::BridgedNSError:
+      return enumDecl->isObjC() && enumDecl->hasCases() &&
+             enumDecl->hasOnlyCasesWithoutAssociatedValues();
 
-        // Enums without associated values and enums with a raw type of String
-        // or Int can explicitly derive CodingKey conformance.
-      case KnownDerivableProtocolKind::CodingKey: {
-        Type rawType = enumDecl->getRawType();
-        if (rawType) {
-          return rawType->isString() || rawType->isInt();
-        }
-
-        // hasOnlyCasesWithoutAssociatedValues will return true for empty enums;
-        // empty enums are allowed to conform as well.
-        return enumDecl->hasOnlyCasesWithoutAssociatedValues();
+      // Enums without associated values and enums with a raw type of String
+      // or Int can explicitly derive CodingKey conformance.
+    case KnownDerivableProtocolKind::CodingKey: {
+      Type rawType = enumDecl->getRawType();
+      if (rawType) {
+        return rawType->isString() || rawType->isInt();
       }
 
-      default:
-        return false;
+      // hasOnlyCasesWithoutAssociatedValues will return true for empty enums;
+      // empty enums are allowed to conform as well.
+      return enumDecl->hasOnlyCasesWithoutAssociatedValues();
+    }
+
+    default:
+      return false;
     }
   } else if (isa<StructDecl>(Nominal)) {
     switch (*derivableKind) {
@@ -295,14 +295,15 @@ ValueDecl *DerivedConformance::getDerivableRequirement(NominalTypeDecl *nominal,
   auto getRequirement = [&](KnownProtocolKind kind) -> ValueDecl * {
     // Dig out the protocol.
     auto proto = ctx.getProtocol(kind);
-    if (!proto) return nullptr;
+    if (!proto)
+      return nullptr;
 
-    auto conformance = lookupConformance(
-        nominal->getDeclaredInterfaceType(), proto);
+    auto conformance =
+        lookupConformance(nominal->getDeclaredInterfaceType(), proto);
     if (conformance.isConcrete()) {
       // Check whether this nominal type derives conformances to the protocol.
       if (!DerivedConformance::derivesProtocolConformance(
-            conformance.getConcrete()->getRootNormalConformance()))
+              conformance.getConcrete()->getRootNormalConformance()))
         return nullptr;
     }
 
@@ -391,8 +392,7 @@ ValueDecl *DerivedConformance::getDerivableRequirement(NominalTypeDecl *nominal,
     if (name.isCompoundName() && name.getBaseName() == ctx.Id_resolve &&
         func->isStatic()) {
       auto argumentNames = name.getArgumentNames();
-      if (argumentNames.size() == 2 &&
-          argumentNames[0] == ctx.Id_id &&
+      if (argumentNames.size() == 2 && argumentNames[0] == ctx.Id_id &&
           argumentNames[1] == ctx.Id_using) {
         return getRequirement(KnownProtocolKind::DistributedActor);
       }
@@ -414,8 +414,7 @@ ValueDecl *DerivedConformance::getDerivableRequirement(NominalTypeDecl *nominal,
         return getRequirement(KnownProtocolKind::RawRepresentable);
 
       // CodingKey.init?(stringValue:), CodingKey.init?(intValue:)
-      if (ctor->isFailable() &&
-          !ctor->isImplicitlyUnwrappedOptional() &&
+      if (ctor->isFailable() && !ctor->isImplicitlyUnwrappedOptional() &&
           (argumentNames[0] == ctx.Id_stringValue ||
            argumentNames[0] == ctx.Id_intValue))
         return getRequirement(KnownProtocolKind::CodingKey);
@@ -448,19 +447,17 @@ ValueDecl *DerivedConformance::getDerivableRequirement(NominalTypeDecl *nominal,
   return nullptr;
 }
 
-DeclRefExpr *
-DerivedConformance::createSelfDeclRef(AbstractFunctionDecl *fn) {
+DeclRefExpr *DerivedConformance::createSelfDeclRef(AbstractFunctionDecl *fn) {
   ASTContext &C = fn->getASTContext();
 
   auto selfDecl = fn->getImplicitSelfDecl();
-  return new (C) DeclRefExpr(selfDecl, DeclNameLoc(), /*implicit*/true);
+  return new (C) DeclRefExpr(selfDecl, DeclNameLoc(), /*implicit*/ true);
 }
 
-CallExpr *
-DerivedConformance::createBuiltinCall(ASTContext &ctx,
-                                      BuiltinValueKind builtin,
-                                      ArrayRef<Type> typeArgs,
-                                      ArrayRef<Expr *> args) {
+CallExpr *DerivedConformance::createBuiltinCall(ASTContext &ctx,
+                                                BuiltinValueKind builtin,
+                                                ArrayRef<Type> typeArgs,
+                                                ArrayRef<Expr *> args) {
   auto name = ctx.getIdentifier(getBuiltinName(builtin));
   auto decl = getBuiltinValueDecl(ctx, name);
   assert(decl);
@@ -469,8 +466,8 @@ DerivedConformance::createBuiltinCall(ASTContext &ctx,
   auto fnType = decl->getInterfaceType();
   if (auto genericFnType = fnType->getAs<GenericFunctionType>()) {
     auto generics = genericFnType->getGenericSignature();
-    auto subs = SubstitutionMap::get(generics, typeArgs,
-                                     LookUpConformanceInModule{});
+    auto subs =
+        SubstitutionMap::get(generics, typeArgs, LookUpConformanceInModule{});
     declRef = ConcreteDeclRef(decl, subs);
     fnType = genericFnType->substGenericArgs(subs);
   } else {
@@ -479,9 +476,9 @@ DerivedConformance::createBuiltinCall(ASTContext &ctx,
 
   auto resultType = fnType->castTo<FunctionType>()->getResult();
 
-  Expr *ref = new (ctx) DeclRefExpr(declRef, DeclNameLoc(),
-                                    /*Implicit=*/true,
-                                    AccessSemantics::Ordinary, fnType);
+  Expr *ref = new (ctx)
+      DeclRefExpr(declRef, DeclNameLoc(),
+                  /*Implicit=*/true, AccessSemantics::Ordinary, fnType);
   auto *argList = ArgumentList::forImplicitUnlabeled(ctx, args);
   auto *call = CallExpr::createImplicit(ctx, ref, argList);
   call->setType(resultType);
@@ -604,7 +601,7 @@ bool DerivedConformance::checkAndDiagnoseDisallowedContext(
                                   Extension->getStartLoc(), SS);
       if (!Text.empty()) {
         ConformanceDecl->diagnose(diag::missing_witnesses_general)
-          .fixItInsertAfter(FixitLocation, Text.str());
+            .fixItInsertAfter(FixitLocation, Text.str());
       }
     }
     return true;
@@ -643,9 +640,9 @@ bool DerivedConformance::checkAndDiagnoseDisallowedContext(
 /// \p rhsExpr The second expression to compare for equality.
 /// \p guardReturnValue The expression to return if the two sides are not equal
 GuardStmt *DerivedConformance::returnIfNotEqualGuard(ASTContext &C,
-                                        Expr *lhsExpr,
-                                        Expr *rhsExpr,
-                                        Expr *guardReturnValue) {
+                                                     Expr *lhsExpr,
+                                                     Expr *rhsExpr,
+                                                     Expr *guardReturnValue) {
   SmallVector<StmtConditionElement, 1> conditions;
   SmallVector<ASTNode, 1> statements;
 
@@ -654,9 +651,9 @@ GuardStmt *DerivedConformance::returnIfNotEqualGuard(ASTContext &C,
 
   // Next, generate the condition being checked.
   // lhs == rhs
-  auto cmpFuncExpr = new (C) UnresolvedDeclRefExpr(
-    DeclNameRef(C.Id_EqualsOperator), DeclRefKind::BinaryOperator,
-    DeclNameLoc());
+  auto cmpFuncExpr =
+      new (C) UnresolvedDeclRefExpr(DeclNameRef(C.Id_EqualsOperator),
+                                    DeclRefKind::BinaryOperator, DeclNameLoc());
   auto *cmpExpr = BinaryExpr::create(C, lhsExpr, cmpFuncExpr, rhsExpr,
                                      /*implicit*/ true);
   conditions.emplace_back(cmpExpr);
@@ -673,20 +670,19 @@ GuardStmt *DerivedConformance::returnIfNotEqualGuard(ASTContext &C,
 /// \p lhsExpr The first expression to compare for equality.
 /// \p rhsExpr The second expression to compare for equality.
 GuardStmt *DerivedConformance::returnFalseIfNotEqualGuard(ASTContext &C,
-                                        Expr *lhsExpr,
-                                        Expr *rhsExpr) {
+                                                          Expr *lhsExpr,
+                                                          Expr *rhsExpr) {
   // return false
   auto falseExpr = new (C) BooleanLiteralExpr(false, SourceLoc(), true);
   return returnIfNotEqualGuard(C, lhsExpr, rhsExpr, falseExpr);
 }
-/// Returns a generated guard statement that checks whether the given expr is true.
-/// If it is false, the else block for the guard returns `nil`.
+/// Returns a generated guard statement that checks whether the given expr is
+/// true. If it is false, the else block for the guard returns `nil`.
 /// \p C The AST context.
 /// \p testExpr The expression that should be tested.
 /// \p baseType The wrapped type of the to-be-returned Optional<Wrapped>.
-GuardStmt *DerivedConformance::returnNilIfFalseGuardTypeChecked(ASTContext &C,
-                                        Expr *testExpr,
-                                        Type optionalWrappedType) {
+GuardStmt *DerivedConformance::returnNilIfFalseGuardTypeChecked(
+    ASTContext &C, Expr *testExpr, Type optionalWrappedType) {
   auto nilExpr = new (C) NilLiteralExpr(SourceLoc(), /*implicit=*/true);
   nilExpr->setType(optionalWrappedType->wrapInOptionalType());
 
@@ -711,12 +707,12 @@ GuardStmt *DerivedConformance::returnNilIfFalseGuardTypeChecked(ASTContext &C,
 /// \p lhsExpr The first expression to compare for equality.
 /// \p rhsExpr The second expression to compare for equality.
 GuardStmt *DerivedConformance::returnComparisonIfNotEqualGuard(ASTContext &C,
-                                        Expr *lhsExpr,
-                                        Expr *rhsExpr) {
+                                                               Expr *lhsExpr,
+                                                               Expr *rhsExpr) {
   // return lhs < rhs
-  auto ltFuncExpr = new (C) UnresolvedDeclRefExpr(
-    DeclNameRef(C.Id_LessThanOperator), DeclRefKind::BinaryOperator,
-    DeclNameLoc());
+  auto ltFuncExpr =
+      new (C) UnresolvedDeclRefExpr(DeclNameRef(C.Id_LessThanOperator),
+                                    DeclRefKind::BinaryOperator, DeclNameLoc());
   auto *ltExpr = BinaryExpr::create(C, lhsExpr, ltFuncExpr, rhsExpr,
                                     /*implicit*/ true);
   return returnIfNotEqualGuard(C, lhsExpr, rhsExpr, ltExpr);
@@ -741,19 +737,17 @@ static IntegerLiteralExpr *buildIntegerLiteral(ASTContext &C, unsigned index) {
 /// \p funcDecl The parent function.
 /// \p indexName The name of the output variable.
 /// \return A DeclRefExpr of the output variable (of type Int).
-DeclRefExpr *DerivedConformance::convertEnumToIndex(SmallVectorImpl<ASTNode> &stmts,
-                                       DeclContext *parentDC,
-                                       EnumDecl *enumDecl,
-                                       VarDecl *enumVarDecl,
-                                       AbstractFunctionDecl *funcDecl,
-                                       const char *indexName) {
+DeclRefExpr *DerivedConformance::convertEnumToIndex(
+    SmallVectorImpl<ASTNode> &stmts, DeclContext *parentDC, EnumDecl *enumDecl,
+    VarDecl *enumVarDecl, AbstractFunctionDecl *funcDecl,
+    const char *indexName) {
   ASTContext &C = enumDecl->getASTContext();
   Type enumType = enumVarDecl->getTypeInContext();
   Type intType = C.getIntType();
 
-  auto indexVar = new (C) VarDecl(/*IsStatic*/false, VarDecl::Introducer::Var,
-                                  SourceLoc(), C.getIdentifier(indexName),
-                                  funcDecl);
+  auto indexVar =
+      new (C) VarDecl(/*IsStatic*/ false, VarDecl::Introducer::Var, SourceLoc(),
+                      C.getIdentifier(indexName), funcDecl);
   indexVar->setInterfaceType(intType);
   indexVar->setImplicit();
 
@@ -783,24 +777,23 @@ DeclRefExpr *DerivedConformance::convertEnumToIndex(SmallVectorImpl<ASTNode> &st
     // generate: indexVar = <index>
     auto indexExpr = buildIntegerLiteral(C, index++);
 
-    auto indexRef = new (C) DeclRefExpr(indexVar, DeclNameLoc(),
-                                        /*implicit*/true,
-                                        AccessSemantics::Ordinary,
-                                        LValueType::get(intType));
-    auto assignExpr = new (C) AssignExpr(indexRef, SourceLoc(),
-                                         indexExpr, /*implicit*/ true);
+    auto indexRef = new (C) DeclRefExpr(
+        indexVar, DeclNameLoc(),
+        /*implicit*/ true, AccessSemantics::Ordinary, LValueType::get(intType));
+    auto assignExpr =
+        new (C) AssignExpr(indexRef, SourceLoc(), indexExpr, /*implicit*/ true);
     assignExpr->setType(TupleType::getEmpty(C));
-    auto body = BraceStmt::create(C, SourceLoc(), ASTNode(assignExpr),
-                                  SourceLoc());
+    auto body =
+        BraceStmt::create(C, SourceLoc(), ASTNode(assignExpr), SourceLoc());
     cases.push_back(
         CaseStmt::createImplicit(C, CaseParentKind::Switch, labelItem, body));
   }
 
   // generate: switch enumVar { }
-  auto enumRef = new (C) DeclRefExpr(enumVarDecl, DeclNameLoc(),
-                                     /*implicit*/true,
-                                     AccessSemantics::Ordinary,
-                                     enumVarDecl->getTypeInContext());
+  auto enumRef =
+      new (C) DeclRefExpr(enumVarDecl, DeclNameLoc(),
+                          /*implicit*/ true, AccessSemantics::Ordinary,
+                          enumVarDecl->getTypeInContext());
   auto switchStmt =
       SwitchStmt::createImplicit(LabeledStmtInfo(), enumRef, cases, C);
 
@@ -827,7 +820,8 @@ DerivedConformance::associatedValuesNotConformingToProtocol(
 
     for (auto param : *PL) {
       auto type = param->getInterfaceType();
-      if (checkConformance(DC->mapTypeIntoEnvironment(type), protocol).isInvalid()) {
+      if (checkConformance(DC->mapTypeIntoEnvironment(type), protocol)
+              .isInvalid()) {
         nonconformingAssociatedValues.push_back(param);
       }
     }
@@ -840,9 +834,8 @@ DerivedConformance::associatedValuesNotConformingToProtocol(
 /// \p theEnum The enum whose elements and associated values should be checked.
 /// \p protocol The protocol being requested.
 /// \return True if all associated values of all elements of the enum conform.
-bool DerivedConformance::allAssociatedValuesConformToProtocol(DeclContext *DC,
-                                                 EnumDecl *theEnum,
-                                                 ProtocolDecl *protocol) {
+bool DerivedConformance::allAssociatedValuesConformToProtocol(
+    DeclContext *DC, EnumDecl *theEnum, ProtocolDecl *protocol) {
   return associatedValuesNotConformingToProtocol(DC, theEnum, protocol).empty();
 }
 
@@ -890,8 +883,8 @@ Pattern *DerivedConformance::enumElementPayloadSubpattern(
       namedPattern->setImplicit();
       auto letPattern = BindingPattern::createImplicit(
           C, VarDecl::Introducer::Let, namedPattern);
-      elementPatterns.push_back(TuplePatternElt(tupleElement.getName(),
-                                                SourceLoc(), letPattern));
+      elementPatterns.push_back(
+          TuplePatternElt(tupleElement.getName(), SourceLoc(), letPattern));
     }
 
     auto pat = TuplePattern::createImplicit(C, elementPatterns);
@@ -962,8 +955,9 @@ CaseStmt *DerivedConformance::unavailableEnumElementCaseStmt(
 /// \p type The type of the variable.
 /// \p varContext The context of the variable.
 /// \return A VarDecl named with the prefix and number.
-VarDecl *DerivedConformance::indexedVarDecl(char prefixChar, int index, Type type,
-                               DeclContext *varContext) {
+VarDecl *DerivedConformance::indexedVarDecl(char prefixChar, int index,
+                                            Type type,
+                                            DeclContext *varContext) {
   ASTContext &C = varContext->getASTContext();
 
   llvm::SmallString<8> indexVal;
@@ -972,9 +966,9 @@ VarDecl *DerivedConformance::indexedVarDecl(char prefixChar, int index, Type typ
   auto indexStr = C.AllocateCopy(indexVal);
   auto indexStrRef = StringRef(indexStr.data(), indexStr.size());
 
-  auto varDecl = new (C) VarDecl(/*IsStatic*/false, VarDecl::Introducer::Let,
-                                 SourceLoc(), C.getIdentifier(indexStrRef),
-                                 varContext);
+  auto varDecl =
+      new (C) VarDecl(/*IsStatic*/ false, VarDecl::Introducer::Let, SourceLoc(),
+                      C.getIdentifier(indexStrRef), varContext);
   varDecl->setInterfaceType(type);
   return varDecl;
 }
@@ -992,4 +986,50 @@ bool swift::memberwiseAccessorsRequireActorIsolation(NominalTypeDecl *nominal) {
   }
 
   return false;
+}
+
+std::string swift::getDerivedConformanceMacroArg(DerivedConformance &derived,
+                                                 ValueDecl *requirement) {
+  std::string code = "";
+  if (auto *sd = dyn_cast<StructDecl>(derived.Nominal)) {
+    code += "    .aStruct(members: [";
+    for (auto prop : sd->getStoredProperties()) {
+      if (!prop->isUserAccessible()) {
+        continue;
+      }
+      auto name = prop->getBaseName().getIdentifier().str().str();
+      code += "\n        \"" + name + "\",";
+    }
+    code += "])";
+  } else if (auto *ed = dyn_cast<EnumDecl>(derived.Nominal)) {
+    code += "    .anEnum(cases: [";
+    for (const auto *elt : ed->getAllElements()) {
+      code += "\n        (caseName: \"";
+      code += elt->getBaseIdentifier().str().str();
+      code += "\"";
+      code += ", argLabels: [";
+      if (elt->hasAssociatedValues()) {
+        if (auto payloadType = elt->getPayloadInterfaceType()) {
+          if (auto tupleType = payloadType->getAs<TupleType>()) {
+            for (auto tupleElement : tupleType->getElements()) {
+              if (tupleElement.hasName()) {
+                code += "\"";
+                code += tupleElement.getName().str().str();
+                code += "\", ";
+              } else {
+                code += "nil, ";
+              }
+            }
+          } else {
+            code += "nil, ";
+          }
+        }
+      }
+      code += "], isUnavailable: false),";
+    }
+    code += "])";
+  } else {
+    llvm_unreachable("unexpected nominal type");
+  }
+  return code;
 }

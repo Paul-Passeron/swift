@@ -608,9 +608,6 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
     ValueDecl *val = nullptr;
     free->setImplicit(true);
     free->setDeclContext(parentDc);
-    // llvm::errs() << "MacroExpansionDecl: " << "\n";
-    // free->print(llvm::errs(), PrintOptions::printEverything());
-    // llvm::errs() << "===================\n";
     addMemberToConformanceContext(dyn_cast<Decl>(free), nullptr);
 
     // Contains a single node
@@ -642,51 +639,8 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
     }
 
     std::string code = "#deriveEquatable(\n";
-
-    if (auto *sd = dyn_cast<StructDecl>(Nominal)) {
-      code += "    .aStruct(members: [";
-      for (auto prop : sd->getStoredProperties()) {
-        if (!prop->isUserAccessible()) {
-          continue;
-        }
-        auto name = prop->getBaseName().getIdentifier().str().str();
-        code += "\n        \"" + name + "\",";
-      }
-      code += "]))";
-    } else if (auto *ed = dyn_cast<EnumDecl>(Nominal)) {
-      code += "    .anEnum(cases: [";
-      for (const auto *elt : ed->getAllElements()) {
-        code += "\n        (caseName: \"";
-        code += elt->getBaseIdentifier().str().str();
-        code += "\"";
-        code += ", argLabels: [";
-        if (elt->hasAssociatedValues()) {
-          if (auto payloadType = elt->getPayloadInterfaceType()) {
-            if (auto tupleType = payloadType->getAs<TupleType>()) {
-              for (auto tupleElement : tupleType->getElements()) {
-                if (tupleElement.hasName()) {
-                  code += "\"";
-                  code += tupleElement.getName().str().str();
-                  code += "\", ";
-                } else {
-                  code += "nil, ";
-                }
-              }
-            } else {
-              code += "nil, ";
-            }
-          }
-        }
-        code += "], isUnavailable: false),";
-      }
-      code += "]))";
-    } else {
-      llvm_unreachable("deriveEquatable only supports struct/enum");
-    }
-    // llvm::errs() << "=========================\n";
-    // llvm::errs() << code << "\n";
-    // llvm::errs() << "=========================\n";
-
+    code += getDerivedConformanceMacroArg(*this, requirement);
+    code += ")";
     auto buffer =
         llvm::MemoryBuffer::getMemBufferCopy(code, getUniqueASTGenBufferName());
 
@@ -714,7 +668,7 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
     assert(free);
 
     auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
-    eInfo->SigilLoc     = atLoc;
+    eInfo->SigilLoc = atLoc;
     eInfo->MacroNameLoc = DeclNameLoc(atLoc);
 
     auto &gsi = const_cast<GeneratedSourceInfo &>(
@@ -1213,6 +1167,8 @@ void DerivedConformance::tryDiagnoseFailedHashableDerivation(
   diagnoseIfSynthesisUnsupportedForDecl(nominal, hashableProto);
 }
 
+#ifdef DO_NOT_USE_MACROS
+
 ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
   // var hashValue: Int
   if (requirement->getBaseName() == Context.Id_hashValue) {
@@ -1288,6 +1244,91 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
   requirement->diagnose(diag::broken_hashable_requirement);
   return nullptr;
 }
+
+#else
+
+ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
+  auto *parentDc = this->getConformanceContext();
+  auto &C = parentDc->getASTContext();
+  auto atLoc = getValidSourceLocForImplicit(*this, requirement);
+  // auto DeclNameLoc = [&](SourceLoc loc) { return loc; };
+  std::string code = "";
+  if (requirement->getBaseName() == Context.Id_hashValue) {
+    code += "#deriveHashableHashValue(";
+  } else if (requirement->getBaseName() == Context.Id_hash) {
+    code += "#deriveHashableHash(";
+  } else {
+    requirement->diagnose(diag::broken_hashable_requirement);
+    return nullptr;
+  }
+  code += getDerivedConformanceMacroArg(*this, requirement);
+  code += ")";
+
+  auto buffer =
+      llvm::MemoryBuffer::getMemBufferCopy(code, getUniqueASTGenBufferName());
+
+  auto bufferID = C.SourceMgr.addNewSourceBuffer(std::move(buffer));
+
+  GeneratedSourceInfo info;
+  info.kind = GeneratedSourceInfo::Kind::DeclarationMacroExpansion;
+  info.originalSourceRange = CharSourceRange(atLoc, 0);
+  info.generatedSourceRange = C.SourceMgr.getRangeForBuffer(bufferID);
+  info.astNode = 0; // will be filled below
+  info.declContext = parentDc;
+  C.SourceMgr.setGeneratedSourceInfo(bufferID, info);
+
+  auto *SF = new (C) SourceFile(*requirement->getModuleContext(),
+                                SourceFileKind::DefaultArgument, bufferID);
+  SF->setImports({});
+  auto decls = SF->getTopLevelDecls();
+  assert(decls.size() == 1);
+  auto *decl = decls[0];
+  assert(decl);
+  decl->setImplicit(true);
+  decl->setDeclContext(parentDc);
+
+  auto *free = dyn_cast<MacroExpansionDecl>(decl);
+  assert(free);
+
+  auto &gsi = const_cast<GeneratedSourceInfo &>(
+      *C.SourceMgr.getGeneratedSourceInfo(bufferID));
+  gsi.astNode = ASTNode(free).getOpaqueValue();
+
+  auto *eInfo = free->getExpansionInfo();
+  eInfo->SigilLoc = atLoc;
+  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
+
+  addMemberToConformanceContext(free, nullptr);
+  ValueDecl *val = nullptr;
+  bool ran = false;
+
+  free->forEachExpandedNode([&](ASTNode node) {
+    auto *decl = node.dyn_cast<Decl *>();
+     assert(decl);
+     if (auto *fdecl = dyn_cast<FuncDecl>(decl)) {
+       // hash(into:) path
+       fdecl->setUserAccessible(false);
+       addNonIsolatedToSynthesized(*this, fdecl);
+       ran = true;
+       val = fdecl;
+     } else if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
+       // hashValue path
+       ran = true;
+       vdecl->setUserAccessible(false);
+       vdecl->setImplicit();
+       val = vdecl;
+     } else if (auto *pbd = dyn_cast<PatternBindingDecl>(decl)) {
+       (void)pbd;
+     } else {
+       assert(false && "Unexpected expanded node");
+     }
+  });
+  assert(ran);
+  assert(val);
+  return val;
+}
+
+#endif
 
 std::unique_ptr<llvm::MemoryBuffer> swift::evaluateEquatableEnumMacroBuffer(
     ASTContext &ctx,

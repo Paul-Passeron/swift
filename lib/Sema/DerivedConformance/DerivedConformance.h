@@ -469,6 +469,8 @@ public:
 /// because they involve mutable state.
 bool memberwiseAccessorsRequireActorIsolation(NominalTypeDecl *nominal);
 
+std::string getDerivedConformanceMacroArg(DerivedConformance &derived, ValueDecl *requirement);
+
 } // namespace swift
 
 #endif
