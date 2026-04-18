@@ -25,7 +25,7 @@ public struct DeriveEquatableMacro {
     switch derived {
     case .aStruct(let members):
       return expandStructDecl(members: members)
-    case .anEnum(let cases):
+    case .anEnum(let cases, isObjC: _):
       return expandEnumDecl(cases: cases)
     }
   }
@@ -51,11 +51,11 @@ extension DeriveHashableHashValueMacro: DeclarationMacro {
     in context: some MacroExpansionContext
   ) throws -> [DeclSyntax] {
     let hashValue: DeclSyntax =
-        """
-        var  hashValue: Int {
-          return _hashValue(for: self)
-        }
-        """
+      """
+      var  hashValue: Int {
+        return _hashValue(for: self)
+      }
+      """
     return [hashValue]
   }
 }
@@ -65,8 +65,8 @@ public struct DeriveHashableHashMacro {
     switch derived {
     case .aStruct(let members):
       return Self.expandStructDecl(members: members)
-    case .anEnum(let cases):
-      return Self.expandEnumDecl(isObjC: /*TODO*/ false, cases: cases)
+    case .anEnum(let cases, let isObjC):
+      return Self.expandEnumDecl(isObjC: isObjC, cases: cases)
     }
   }
 
@@ -104,7 +104,7 @@ public struct DeriveHashableHashMacro {
 
 extension EnumCaseInfo {
   func getCasePattern() -> String {
-    let args = argLabels.enumerated().map {(i, lbl) in
+    let args = argLabels.enumerated().map { (i, lbl) in
       let varDecl = "let x\(i)"
       if let lbl = lbl {
         return "\(lbl): \(varDecl)"
@@ -128,7 +128,7 @@ extension EnumCaseInfo {
   }
 
   func getCaseForHashableValue(idx: Int) -> String {
-    if (argLabels.isEmpty) {
+    if argLabels.isEmpty {
       return "case .\(caseName):\n    hasher.combine(\(idx))"
     }
     if isUnavailable {
@@ -146,7 +146,6 @@ extension EnumCaseInfo {
   }
 }
 
-
 extension DeriveHashableHashMacro: DeclarationMacro {
   public static func expansion(
     of node: some FreestandingMacroExpansionSyntax,
@@ -156,7 +155,6 @@ extension DeriveHashableHashMacro: DeclarationMacro {
       fatalError("Could not decode expansion")
     }
     let res = Self.expandDecl(derived: arg)
-    print(res)
     return [res]
   }
 }

@@ -1002,6 +1002,7 @@ std::string swift::getDerivedConformanceMacroArg(DerivedConformance &derived,
     }
     code += "])";
   } else if (auto *ed = dyn_cast<EnumDecl>(derived.Nominal)) {
+    auto objC = ed->isObjC();
     code += "    .anEnum(cases: [";
     for (const auto *elt : ed->getAllElements()) {
       code += "\n        (caseName: \"";
@@ -1027,7 +1028,11 @@ std::string swift::getDerivedConformanceMacroArg(DerivedConformance &derived,
       }
       code += "], isUnavailable: false),";
     }
-    code += "])";
+    code += "]";
+    if (objC) {
+      code += "isObjC: true";
+    }
+    code += ")";
   } else {
     llvm_unreachable("unexpected nominal type");
   }

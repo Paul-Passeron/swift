@@ -11,7 +11,7 @@ public struct EnumCaseInfo {
 
 public enum DerivedNominalKind {
   case aStruct(members: [IdentifierPatternSyntax])
-  case anEnum(cases: [EnumCaseInfo])
+  case anEnum(cases: [EnumCaseInfo], isObjC: Bool)
 }
 
 func decodeStructExpansion(arg: LabeledExprSyntax) -> DerivedNominalKind? {
@@ -35,11 +35,29 @@ func decodeStructExpansion(arg: LabeledExprSyntax) -> DerivedNominalKind? {
   return DerivedNominalKind.aStruct(members: memberNames.compactMap({ $0 }))
 }
 
-func decodeEnumExpansion(arg: LabeledExprSyntax) -> DerivedNominalKind? {
-  guard arg.label?.text ?? "" == "cases" else { return nil }
-  guard let cases = arg.expression.as(ArrayExprSyntax.self)?.elements else { return nil }
+func decodeEnumExpansion(args: [LabeledExprSyntax]) -> DerivedNominalKind? {
+  var cases: [ExprSyntax]? = nil
+  var isObjCopt: Bool? = nil
+  for arg in args {
+    switch arg.label?.text {
+    case "cases":
+      guard cases == nil else {
+        return nil
+      }
+      cases = arg.expression.as(ArrayExprSyntax.self)?.elements.map { $0.expression }
+
+    case "isObjC":
+      guard isObjCopt == nil else {
+        return nil
+      }
+      isObjCopt = (arg.expression.as(BooleanLiteralExprSyntax.self)?.literal.text ?? "false") == "true"
+    default: return nil
+    }
+  }
+  guard let cases = cases else { return nil }
+  let isObjC = isObjCopt ?? false
   let caseInfos: [EnumCaseInfo?] = cases.compactMap { theCase in
-    guard let theCase = theCase.expression.as(TupleExprSyntax.self) else { return nil }
+    guard let theCase = theCase.as(TupleExprSyntax.self) else { return nil }
     let args = theCase.elements
     var caseName: IdentifierPatternSyntax? = nil
     var argLabels: [IdentifierPatternSyntax?]? = nil
@@ -83,7 +101,8 @@ func decodeEnumExpansion(arg: LabeledExprSyntax) -> DerivedNominalKind? {
   if caseInfos.contains(where: { $0 == nil }) {
     return nil
   }
-  return DerivedNominalKind.anEnum(cases: caseInfos.compactMap({ $0 }))
+  return DerivedNominalKind
+    .anEnum(cases: caseInfos.compactMap{ $0 }, isObjC: isObjC)
 }
 
 func decodeExpansion(expansion: FreestandingMacroExpansionSyntax) -> DerivedNominalKind? {
@@ -104,12 +123,15 @@ func decodeExpansion(expansion: FreestandingMacroExpansionSyntax) -> DerivedNomi
       print("called is not a MemberAccessExprSyntax")
       return nil
     }
-    guard let arg = argExpr.arguments.first else { return nil }
+    let args = argExpr.arguments
     switch kind {
     case "aStruct":
-      return decodeStructExpansion(arg: arg)
+      guard let first = args.first else { return nil }
+      guard args.count == 1 else { return nil }
+      return decodeStructExpansion(arg: first)
     case "anEnum":
-      return decodeEnumExpansion(arg: arg)
+      return decodeEnumExpansion(args: args.map {$0})
+
     default:
       print("Unknown kind: \(kind)")
       return nil
@@ -121,7 +143,7 @@ func decodeExpansion(expansion: FreestandingMacroExpansionSyntax) -> DerivedNomi
 }
 
 func argLabelAsStr(lbl: IdentifierPatternSyntax?) -> String {
-  if let lbl = lbl {return "\"\(lbl)\""} else {return "nil"}
+  if let lbl = lbl { return "\"\(lbl)\"" } else { return "nil" }
 }
 
 extension EnumCaseInfo {
@@ -146,12 +168,12 @@ extension DerivedNominalKind {
           "    \"\(member)\""}.joined(separator: ",\n"))
         ])
         """
-    case .anEnum(let cases):
+    case .anEnum(let cases, let isObjC):
       return
         """
         .anEnum(cases: [
           \(raw: cases.map {$0.asExprSyntax().description}.joined(separator: ",\n  "))
-        ])
+        ], isObjC: \(raw: isObjC)
         """
     }
   }
