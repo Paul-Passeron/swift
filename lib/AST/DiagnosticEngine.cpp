@@ -1651,32 +1651,35 @@ DiagnosticEngine::getGeneratedSourceBufferNotes(SourceLoc loc) {
 #define MACRO_ROLE(Name, Description)  \
     case GeneratedSourceInfo::Name##MacroExpansion:
 #include "swift/Basic/MacroRoles.def"
-    {
-      DeclName macroName = getGeneratedSourceInfoMacroName(*generatedInfo);
+      {
+        DeclName macroName = getGeneratedSourceInfoMacroName(*generatedInfo);
 
-      // If it was an expansion of an attached macro, increase the range to
-      // include the decl's attributes. Also add the name of the decl the macro
-      // is attached to.
-      CustomAttr *attachedAttr = generatedInfo->attachedMacroCustomAttr;
-      Decl *attachedDecl =
-          attachedAttr ? expansionNode.dyn_cast<Decl *>() : nullptr;
-      SourceRange origRange = attachedDecl
-                                  ? attachedDecl->getSourceRangeIncludingAttrs()
-                                  : expansionNode.getSourceRange();
+        CustomAttr *attachedAttr = generatedInfo->attachedMacroCustomAttr;
+        Decl *attachedDecl =
+            attachedAttr ? expansionNode.dyn_cast<Decl *>() : nullptr;
+        SourceRange origRange =
+            attachedDecl ? attachedDecl->getSourceRangeIncludingAttrs()
+                         : expansionNode.getSourceRange();
 
-      Diagnostic expansionNote(diag::in_macro_expansion, macroName,
-                               attachedDecl);
-      if (attachedAttr) {
-        expansionNote.setLoc(attachedAttr->getLocation());
-      } else {
-        expansionNote.setLoc(origRange.Start);
+        Diagnostic expansionNote(diag::in_macro_expansion, macroName,
+                                 attachedDecl);
+        if (attachedAttr) {
+          expansionNote.setLoc(attachedAttr->getLocation());
+        } else {
+          expansionNote.setLoc(origRange.Start);
+        }
+
+        if (origRange.isValid() &&
+            SourceMgr.findBufferContainingLoc(origRange.Start) ==
+                SourceMgr.findBufferContainingLoc(origRange.End)) {
+          expansionNote.addRange(
+              Lexer::getCharSourceRangeFromSourceRange(SourceMgr, origRange));
+        }
+
+        expansionNote.setIsChildNote(true);
+        childNotes.push_back(std::move(expansionNote));
+        break;
       }
-      expansionNote.addRange(
-          Lexer::getCharSourceRangeFromSourceRange(SourceMgr, origRange));
-      expansionNote.setIsChildNote(true);
-      childNotes.push_back(std::move(expansionNote));
-      break;
-    }
 
     case GeneratedSourceInfo::PrettyPrinted:
       break;
