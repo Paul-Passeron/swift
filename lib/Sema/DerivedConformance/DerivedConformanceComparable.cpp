@@ -18,6 +18,7 @@
 
 #include "CodeSynthesis.h"
 #include "DerivedConformance.h"
+#include "DerivedConformanceMacros.h"
 #include "TypeChecker.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/Expr.h"
@@ -30,6 +31,7 @@
 #include "swift/Basic/Assertions.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace swift;
@@ -43,12 +45,14 @@ deriveBodyComparable_enum_uninhabited_lt(AbstractFunctionDecl *ltDecl, void *) {
   auto aParam = args->get(0);
   auto bParam = args->get(1);
 
-  assert(!cast<EnumDecl>(aParam->getInterfaceType()->getAnyNominal())->hasCases());
-  assert(!cast<EnumDecl>(bParam->getInterfaceType()->getAnyNominal())->hasCases());
+  assert(
+      !cast<EnumDecl>(aParam->getInterfaceType()->getAnyNominal())->hasCases());
+  assert(
+      !cast<EnumDecl>(bParam->getInterfaceType()->getAnyNominal())->hasCases());
 
   SmallVector<ASTNode, 0> statements;
   auto body = BraceStmt::create(C, SourceLoc(), statements, SourceLoc());
-  return { body, /*isTypeChecked=*/true };
+  return {body, /*isTypeChecked=*/true};
 }
 
 /// Derive the body for a '<' operator for an enum that has no associated
@@ -56,7 +60,7 @@ deriveBodyComparable_enum_uninhabited_lt(AbstractFunctionDecl *ltDecl, void *) {
 /// and compares them, which produces an optimal single icmp instruction.
 static std::pair<BraceStmt *, bool>
 deriveBodyComparable_enum_noAssociatedValues_lt(AbstractFunctionDecl *ltDecl,
-                                               void *) { 
+                                                void *) {
   auto parentDC = ltDecl->getDeclContext();
   ASTContext &C = parentDC->getASTContext();
 
@@ -68,31 +72,32 @@ deriveBodyComparable_enum_noAssociatedValues_lt(AbstractFunctionDecl *ltDecl,
 
   // Generate the conversion from the enums to integer indices.
   SmallVector<ASTNode, 8> statements;
-  DeclRefExpr *aIndex = DerivedConformance::convertEnumToIndex(statements, parentDC, enumDecl,
-                                           aParam, ltDecl, "index_a");
-  DeclRefExpr *bIndex = DerivedConformance::convertEnumToIndex(statements, parentDC, enumDecl,
-                                           bParam, ltDecl, "index_b");
+  DeclRefExpr *aIndex = DerivedConformance::convertEnumToIndex(
+      statements, parentDC, enumDecl, aParam, ltDecl, "index_a");
+  DeclRefExpr *bIndex = DerivedConformance::convertEnumToIndex(
+      statements, parentDC, enumDecl, bParam, ltDecl, "index_b");
 
   // Generate the compare of the indices.
   FuncDecl *cmpFunc = C.getLessThanIntDecl();
   assert(cmpFunc && "should have a < for int as we already checked for it");
 
-  Expr *cmpFuncExpr = new (C) DeclRefExpr(cmpFunc, DeclNameLoc(),
-                                          /*implicit*/ true,
-                                          AccessSemantics::Ordinary);
+  Expr *cmpFuncExpr =
+      new (C) DeclRefExpr(cmpFunc, DeclNameLoc(),
+                          /*implicit*/ true, AccessSemantics::Ordinary);
 
   auto *cmpExpr =
       BinaryExpr::create(C, aIndex, cmpFuncExpr, bIndex, /*implicit*/ true);
   statements.push_back(ReturnStmt::createImplicit(C, cmpExpr));
 
   BraceStmt *body = BraceStmt::create(C, SourceLoc(), statements, SourceLoc());
-  return { body, /*isTypeChecked=*/false };
+  return {body, /*isTypeChecked=*/false};
 }
 
-/// Derive the body for an '==' operator for an enum where at least one of the
+/// Derive the body for an '<=' operator for an enum where at least one of the
 /// cases has associated values.
 static std::pair<BraceStmt *, bool>
-deriveBodyComparable_enum_hasAssociatedValues_lt(AbstractFunctionDecl *ltDecl, void *) {
+deriveBodyComparable_enum_hasAssociatedValues_lt(AbstractFunctionDecl *ltDecl,
+                                                 void *) {
   auto parentDC = ltDecl->getDeclContext();
   ASTContext &C = parentDC->getASTContext();
 
@@ -105,7 +110,8 @@ deriveBodyComparable_enum_hasAssociatedValues_lt(AbstractFunctionDecl *ltDecl, v
 
   SmallVector<ASTNode, 8> statements;
   SmallVector<CaseStmt *, 4> cases;
-  unsigned elementCount = 0; // need this as `getAllElements` returns a generator
+  unsigned elementCount =
+      0; // need this as `getAllElements` returns a generator
 
   // For each enum element, generate a case statement matching a pair containing
   // the same case, binding variables for the left- and right-hand associated
@@ -114,22 +120,22 @@ deriveBodyComparable_enum_hasAssociatedValues_lt(AbstractFunctionDecl *ltDecl, v
     ++elementCount;
 
     // .<elt>(let l0, let l1, ...)
-    SmallVector<VarDecl*, 4> lhsPayloadVars;
+    SmallVector<VarDecl *, 4> lhsPayloadVars;
     auto *lhsSubpattern = DerivedConformance::enumElementPayloadSubpattern(
         elt, 'l', ltDecl, lhsPayloadVars);
     auto *lhsElemPat = EnumElementPattern::createImplicit(
         enumType, elt, lhsSubpattern, /*DC*/ ltDecl);
 
     // .<elt>(let r0, let r1, ...)
-    SmallVector<VarDecl*, 4> rhsPayloadVars;
+    SmallVector<VarDecl *, 4> rhsPayloadVars;
     auto *rhsSubpattern = DerivedConformance::enumElementPayloadSubpattern(
         elt, 'r', ltDecl, rhsPayloadVars);
     auto *rhsElemPat = EnumElementPattern::createImplicit(
         enumType, elt, rhsSubpattern, /*DC*/ ltDecl);
 
     // case (.<elt>(let l0, let l1, ...), .<elt>(let r0, let r1, ...))
-    auto caseTuplePattern = TuplePattern::createImplicit(C, {
-      TuplePatternElt(lhsElemPat), TuplePatternElt(rhsElemPat) });
+    auto caseTuplePattern = TuplePattern::createImplicit(
+        C, {TuplePatternElt(lhsElemPat), TuplePatternElt(rhsElemPat)});
     caseTuplePattern->setImplicit();
 
     auto labelItem = CaseLabelItem(caseTuplePattern);
@@ -141,25 +147,25 @@ deriveBodyComparable_enum_hasAssociatedValues_lt(AbstractFunctionDecl *ltDecl, v
     for (size_t varIdx = 0; varIdx < lhsPayloadVars.size(); ++varIdx) {
       auto lhsVar = lhsPayloadVars[varIdx];
       auto lhsExpr = new (C) DeclRefExpr(lhsVar, DeclNameLoc(),
-                                         /*implicit*/true);
+                                         /*implicit*/ true);
       auto rhsVar = rhsPayloadVars[varIdx];
       auto rhsExpr = new (C) DeclRefExpr(rhsVar, DeclNameLoc(),
-                                         /*Implicit*/true);
-      auto guardStmt = DerivedConformance::returnComparisonIfNotEqualGuard(C, 
-          lhsExpr, rhsExpr);
+                                         /*Implicit*/ true);
+      auto guardStmt = DerivedConformance::returnComparisonIfNotEqualGuard(
+          C, lhsExpr, rhsExpr);
       statementsInCase.emplace_back(guardStmt);
     }
 
     // If none of the guard statements caused an early exit, then all the pairs
     // were true. (equal)
-    // return false 
+    // return false
     auto falseExpr = new (C) BooleanLiteralExpr(false, SourceLoc(),
-                                               /*Implicit*/true);
+                                                /*Implicit*/ true);
     auto *returnStmt = ReturnStmt::createImplicit(C, falseExpr);
     statementsInCase.push_back(returnStmt);
 
-    auto body = BraceStmt::create(C, SourceLoc(), statementsInCase,
-                                  SourceLoc());
+    auto body =
+        BraceStmt::create(C, SourceLoc(), statementsInCase, SourceLoc());
     cases.push_back(
         CaseStmt::createImplicit(C, CaseParentKind::Switch, labelItem, body));
   }
@@ -171,26 +177,26 @@ deriveBodyComparable_enum_hasAssociatedValues_lt(AbstractFunctionDecl *ltDecl, v
   if (elementCount > 1) {
     auto defaultPattern = AnyPattern::createImplicit(C);
     auto defaultItem = CaseLabelItem::getDefault(defaultPattern);
-    auto body = deriveBodyComparable_enum_noAssociatedValues_lt(ltDecl, nullptr).first;
+    auto body =
+        deriveBodyComparable_enum_noAssociatedValues_lt(ltDecl, nullptr).first;
     cases.push_back(
         CaseStmt::createImplicit(C, CaseParentKind::Switch, defaultItem, body));
   }
 
   // switch (a, b) { <case statements> }
-  auto aRef = new (C) DeclRefExpr(aParam, DeclNameLoc(), /*implicit*/true);
-  auto bRef = new (C) DeclRefExpr(bParam, DeclNameLoc(), /*implicit*/true);
+  auto aRef = new (C) DeclRefExpr(aParam, DeclNameLoc(), /*implicit*/ true);
+  auto bRef = new (C) DeclRefExpr(bParam, DeclNameLoc(), /*implicit*/ true);
   auto abExpr = TupleExpr::createImplicit(C, {aRef, bRef}, /*labels*/ {});
   auto switchStmt =
       SwitchStmt::createImplicit(LabeledStmtInfo(), abExpr, cases, C);
   statements.push_back(switchStmt);
 
   auto body = BraceStmt::create(C, SourceLoc(), statements, SourceLoc());
-  return { body, /*isTypeChecked=*/false };
+  return {body, /*isTypeChecked=*/false};
 }
 
 /// Derive an '<' operator implementation for an enum.
-static ValueDecl *
-deriveComparable_lt(
+static ValueDecl *deriveComparable_lt(
     DerivedConformance &derived,
     std::pair<BraceStmt *, bool> (*bodySynthesizer)(AbstractFunctionDecl *,
                                                     void *)) {
@@ -200,19 +206,16 @@ deriveComparable_lt(
   auto selfIfaceTy = parentDC->getDeclaredInterfaceType();
 
   auto getParamDecl = [&](StringRef s) -> ParamDecl * {
-    auto *param = new (C) ParamDecl(SourceLoc(),
-                                    SourceLoc(), Identifier(), SourceLoc(),
-                                    C.getIdentifier(s), parentDC);
+    auto *param = new (C) ParamDecl(SourceLoc(), SourceLoc(), Identifier(),
+                                    SourceLoc(), C.getIdentifier(s), parentDC);
     param->setSpecifier(ParamSpecifier::Default);
     param->setInterfaceType(selfIfaceTy);
     param->setImplicit();
     return param;
   };
 
-  ParameterList *params = ParameterList::create(C, {
-    getParamDecl("a"),
-    getParamDecl("b")
-  });
+  ParameterList *params =
+      ParameterList::create(C, {getParamDecl("a"), getParamDecl("b")});
 
   auto boolTy = C.getBoolType();
 
@@ -237,9 +240,9 @@ deriveComparable_lt(
   // Add the @_implements(Comparable, < (_:_:)) attribute
   if (generatedIdentifier != C.Id_LessThanOperator) {
     auto comparable = C.getProtocol(KnownProtocolKind::Comparable);
-    SmallVector<Identifier, 2> argumentLabels = { Identifier(), Identifier() };
-    auto comparableDeclName = DeclName(C, DeclBaseName(C.Id_LessThanOperator),
-                                   argumentLabels);
+    SmallVector<Identifier, 2> argumentLabels = {Identifier(), Identifier()};
+    auto comparableDeclName =
+        DeclName(C, DeclBaseName(C.Id_LessThanOperator), argumentLabels);
     comparableDecl->addAttribute(
         ImplementsAttr::create(parentDC, comparable, comparableDeclName));
   }
@@ -253,7 +256,8 @@ deriveComparable_lt(
 
   comparableDecl->setBodySynthesizer(bodySynthesizer);
 
-  comparableDecl->copyFormalAccessFrom(derived.Nominal, /*sourceIsParentContext*/ true);
+  comparableDecl->copyFormalAccessFrom(derived.Nominal,
+                                       /*sourceIsParentContext*/ true);
 
   // Add the operator to the parent scope.
   derived.addMembersToConformanceContext({comparableDecl});
@@ -261,22 +265,25 @@ deriveComparable_lt(
   return comparableDecl;
 }
 
-// for now, only enums can synthesize `Comparable`, so this function can take 
+// for now, only enums can synthesize `Comparable`, so this function can take
 // an `EnumDecl` instead of a `NominalTypeDecl`
-bool 
-DerivedConformance::canDeriveComparable(DeclContext *context, EnumDecl *enumeration) {
+bool DerivedConformance::canDeriveComparable(DeclContext *context,
+                                             EnumDecl *enumeration) {
   // The type must be an enum.
   if (!enumeration) {
-      return false;
+    return false;
   }
-  auto comparable = context->getASTContext().getProtocol(KnownProtocolKind::Comparable);
+  auto comparable =
+      context->getASTContext().getProtocol(KnownProtocolKind::Comparable);
   if (!comparable) {
-      return false; // not sure what should be done here instead
+    return false; // not sure what should be done here instead
   }
   // The cases must not have non-comparable associated values or raw backing
-  return allAssociatedValuesConformToProtocol(context, enumeration, comparable) && !enumeration->hasRawType();
+  return allAssociatedValuesConformToProtocol(context, enumeration,
+                                              comparable) &&
+         !enumeration->hasRawType();
 }
-
+#ifdef DO_NOT_USE_MACROS
 ValueDecl *DerivedConformance::deriveComparable(ValueDecl *requirement) {
   if (checkAndDiagnoseDisallowedContext(requirement)) {
     return nullptr;
@@ -285,11 +292,11 @@ ValueDecl *DerivedConformance::deriveComparable(ValueDecl *requirement) {
     requirement->diagnose(diag::broken_comparable_requirement);
     return nullptr;
   }
-  
+
   // Build the necessary decl.
   auto enumeration = dyn_cast<EnumDecl>(this->Nominal);
   assert(enumeration);
-  
+
   std::pair<BraceStmt *, bool> (*synthesizer)(AbstractFunctionDecl *, void *);
   if (enumeration->hasCases()) {
     if (enumeration->hasOnlyCasesWithoutAssociatedValues()) {
@@ -302,7 +309,55 @@ ValueDecl *DerivedConformance::deriveComparable(ValueDecl *requirement) {
   }
   return deriveComparable_lt(*this, synthesizer);
 }
+#else // DO_NOT_USE_MACROS
+ValueDecl *DerivedConformance::deriveComparable(ValueDecl *requirement) {
+  if (checkAndDiagnoseDisallowedContext(requirement)) {
+    return nullptr;
+  }
+  if (requirement->getBaseName() != "<") {
+    requirement->diagnose(diag::broken_comparable_requirement);
+    return nullptr;
+  }
 
+  auto atLoc = Nominal->getLoc();
+  auto *parentDc = this->getConformanceContext();
+  auto &C = parentDc->getASTContext();
+
+  std::string code = "#deriveComparison(\"<\",\n";
+  code += getDerivedConformanceMacroArg(*this, requirement);
+  code += ")";
+
+  auto bufferID =
+      registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, *this);
+  auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
+                                         bufferID, parentDc);
+
+  auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
+  eInfo->SigilLoc = atLoc;
+  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
+
+  addMemberToConformanceContext(free, nullptr);
+
+  ValueDecl *val = nullptr;
+  bool ran = false;
+  free->forEachExpandedNode([&](ASTNode node) {
+    ran = true;
+    auto *decl = node.dyn_cast<Decl *>();
+    assert(decl && "macro expansion node is not a Decl");
+    auto *fdecl = dyn_cast<FuncDecl>(decl);
+    assert(fdecl);
+    assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
+    fdecl->setUserAccessible(false);
+    addNonIsolatedToSynthesized(*this, fdecl);
+    val = static_cast<ValueDecl *>(fdecl);
+    assert(val);
+  });
+  assert(ran);
+  assert(val);
+  return val;
+}
+
+#endif // DO_NOT_USE_MACROS
 void DerivedConformance::tryDiagnoseFailedComparableDerivation(
     DeclContext *DC, NominalTypeDecl *nominal) {
   auto &ctx = DC->getASTContext();

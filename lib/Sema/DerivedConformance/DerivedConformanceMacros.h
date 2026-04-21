@@ -18,6 +18,7 @@
 #ifndef SWIFT_SEMA_DERIVEDCONFORMANCE_DERIVEDCONFORMANCEMACRO_H
 #define SWIFT_SEMA_DERIVEDCONFORMANCE_DERIVEDCONFORMANCEMACRO_H
 
+#include "DerivedConformance/DerivedConformance.h"
 #include "swift/AST/ASTBridging.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/DiagnosticEngine.h"
@@ -35,6 +36,18 @@ std::unique_ptr<llvm::MemoryBuffer> getBufferForAstGenMacro(char *outBuffer,
 
 const char *cloneString(llvm::BumpPtrAllocator &allocator, StringRef str);
 std::string getUniqueASTGenBufferName();
+
+unsigned registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
+                                               DeclContext *parentDc,
+                                               SourceLoc atLoc,
+                                               DerivedConformance &der);
+
+
+MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
+                                              ModuleDecl *module,
+                                              unsigned bufferID,
+                                              DeclContext *parentDc);
+
 // ==== Equatable =============================================================
 
 struct EnumCaseInfo {

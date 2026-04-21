@@ -1046,6 +1046,5 @@ std::string swift::getDerivedConformanceMacroArg(DerivedConformance &derived,
   } else {
     llvm_unreachable("unexpected nominal type");
   }
-  llvm::errs() << code << "\n";
   return code;
 }

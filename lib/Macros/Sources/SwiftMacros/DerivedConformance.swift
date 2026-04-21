@@ -134,14 +134,10 @@ func decodeEnumExpansion(args: [LabeledExprSyntax]) -> DerivedNominalKind? {
       isUnsafe: isUnsafe)
 }
 
-func decodeExpansion(expansion: FreestandingMacroExpansionSyntax) -> DerivedNominalKind? {
-  guard let arg: LabeledExprSyntax = expansion.arguments.first else { /* TODO: emit diagnostic*/
-    return nil
-  }
-  let argExpr = arg.expression
-  switch argExpr.kind {
+func decodeExpansionArg(arg: ExprSyntax) -> DerivedNominalKind? {
+  switch arg.kind {
   case .functionCallExpr:
-    guard let argExpr = argExpr.as(FunctionCallExprSyntax.self) else { return nil }
+    guard let argExpr = arg.as(FunctionCallExprSyntax.self) else { return nil }
     let called = argExpr.calledExpression
     guard let kind = called.as(MemberAccessExprSyntax.self)?.declName.baseName.text else {
       return nil
@@ -154,6 +150,14 @@ func decodeExpansion(expansion: FreestandingMacroExpansionSyntax) -> DerivedNomi
     }
   default: return nil
   }
+}
+
+func decodeExpansion(expansion: FreestandingMacroExpansionSyntax) -> DerivedNominalKind? {
+  guard let arg: LabeledExprSyntax = expansion.arguments.first else {
+    /* TODO: emit diagnostic*/
+    return nil
+  }
+  return decodeExpansionArg(arg: arg.expression)
 }
 
 func argLabelAsStr(lbl: IdentifierPatternSyntax?) -> String {

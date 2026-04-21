@@ -28,3 +28,7 @@ public macro deriveHashableHashValue(_ kind: DerivedNominalKind) =
 @freestanding(declaration, names: named(hash))
 public macro deriveHashableHash(_ kind: DerivedNominalKind) =
   #externalMacro(module: "SwiftMacros", type: "DeriveHashableHashMacro")
+
+@freestanding(declaration, names: named(__derived_equals), named(__derived_enum_less_than))
+public macro deriveComparison(_ comparison: String, _ kind: DerivedNominalKind) =
+  #externalMacro(module: "SwiftMacros", type: "DeriveComparisonMacro")

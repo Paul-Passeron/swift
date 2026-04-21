@@ -630,21 +630,12 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
 
 #else // IN_MEMORY_REPR
 
-static unsigned registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
-                                               DeclContext *parentDc,
-                                               SourceLoc atLoc,
-                                               DerivedConformance &der);
-
-static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
-                                                     ModuleDecl *module,
-                                                     unsigned bufferID,
-                                                     DeclContext *parentDc);
-
 ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
+  auto *parentDc = this->getConformanceContext();
+  auto &C = parentDc->getASTContext();
+
   auto atLoc = getValidSourceLocForImplicit(*this, requirement);
   if (requirement->getBaseName() == "==") {
-    auto *parentDc = this->getConformanceContext();
-    auto &C = parentDc->getASTContext();
     if (!C.getEqualIntDecl()) {
       ConformanceDecl->diagnose(diag::no_equal_overload_for_int);
       return nullptr;
@@ -1253,40 +1244,6 @@ buildHashableMacroSource(DerivedConformance &derived, ValueDecl *requirement) {
   return code;
 }
 
-static unsigned registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
-                                               DeclContext *parentDc,
-                                               SourceLoc atLoc,
-                                               DerivedConformance &der) {
-  auto buffer =
-      llvm::MemoryBuffer::getMemBufferCopy(code, getUniqueASTGenBufferName());
-  auto bufferID = ctx.SourceMgr.addNewSourceBuffer(std::move(buffer));
-
-  GeneratedSourceInfo info;
-  info.kind = GeneratedSourceInfo::Kind::DeclarationMacroExpansion;
-  info.originalSourceRange = CharSourceRange(atLoc, 0);
-  info.generatedSourceRange = ctx.SourceMgr.getRangeForBuffer(bufferID);
-  info.astNode = ASTNode(der.ConformanceDecl).getOpaqueValue();
-  info.declContext = parentDc;
-  ctx.SourceMgr.setGeneratedSourceInfo(bufferID, info);
-
-  return bufferID;
-}
-
-static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
-                                                     ModuleDecl *module,
-                                                     unsigned bufferID,
-                                                     DeclContext *parentDc) {
-  auto *SF =
-      new (ctx) SourceFile(*module, SourceFileKind::MacroExpansion, bufferID);
-  SF->setImports({});
-  auto decls = SF->getTopLevelDecls();
-  assert(decls.size() == 1);
-  auto *decl = decls[0];
-  decl->setImplicit(true);
-  auto *free = dyn_cast<MacroExpansionDecl>(decl);
-  assert(free && "Expected a MacroExpansionDecl");
-  return free;
-}
 
 
 static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
