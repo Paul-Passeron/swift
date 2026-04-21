@@ -11,8 +11,10 @@ public macro EquatableDeclMacroOld() = Builtin.DerivedConformanceMacro
 public macro EquatableDeclMacro() = Builtin.DerivedConformanceMacro
 
 @frozen public enum DerivedNominalKind {
-  case aStruct(members: [String])
-  case anEnum(cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)], )
+  case aStruct(members: [String], isUnsafe: Bool = false)
+  case anEnum(
+    cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)],
+    isUnsafe: Bool = false)
 }
 
 @freestanding(declaration, names: named(__derived_equals))

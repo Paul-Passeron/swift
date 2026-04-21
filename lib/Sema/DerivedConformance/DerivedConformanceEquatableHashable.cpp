@@ -1288,22 +1288,6 @@ static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
   return free;
 }
 
-static void propagateUnsafeAttr(DerivedConformance &derived, ValueDecl *val) {
-  if (!derived.Nominal->getAttrs().hasAttribute<UnsafeAttr>()) {
-    llvm::errs() << "No UnsafeAttr found on nominal type "
-                 << derived.Nominal->getName() << "\n";
-    return;
-  }
-
-  llvm::errs() << "UnsafeAttr found on nominal type "
-               << derived.Nominal->getName() << "\n";
-
-  auto &ctx = derived.Context;
-  if (auto *vd = dyn_cast<VarDecl>(val)) {
-    if (auto *getter = vd->getAccessor(AccessorKind::Get))
-      getter->addAttribute(new (ctx) UnsafeAttr(/*implicit=*/true));
-  }
-}
 
 static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
                                          ValueDecl *requirement) {
@@ -1328,16 +1312,9 @@ static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
   static std::unordered_set<void *> allDecls;
 
   der.addMemberToConformanceContext(free, nullptr);
-  // llvm::errs() << "NOMINAL: " << der.Nominal->getName() << "\n";
   ValueDecl *val = nullptr;
   free->forEachExpandedNode([&](ASTNode node) {
     auto *decl = node.dyn_cast<Decl *>();
-    // if (allDecls.find((void*)decl) != allDecls.end()) {
-    //   llvm::errs() << "[FOUND DUPLICATE DECL]: " << (void *)decl << "\n";
-    // }
-    // llvm::errs() << "    DECL: " << (void *)decl << "\n";
-    // llvm::errs() << "    length: " << allDecls.size() << "\n";
-
     auto thisBuffer =
         ctx.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
     auto *SF = ctx.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
@@ -1364,15 +1341,11 @@ static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
 
     val = vdecl;
     if (auto fdecl = dyn_cast<AbstractFunctionDecl>(decl)) {
-      propagateUnsafeAttr(der, fdecl);
-
       addNonIsolatedToSynthesized(der, fdecl);
     }
     if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
-
       vdecl->setInterfaceType(ctx.getIntType());
       vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
-      propagateUnsafeAttr(der, vdecl);
       if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
         getter->setImplicit();
         getter->setSynthesized();
@@ -1386,15 +1359,7 @@ static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
       }
       val = vdecl;
     }
-
   });
-  auto thisBuffer =
-      ctx.SourceMgr.findBufferContainingLoc(val->getStartLoc());
-  auto *SF = ctx.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
-  auto scope = SF->getScope();
-  scope.buildFullyExpandedTree();
-
-
 
   assert(val && "Macro expansion did not produce a witness");
   return val;

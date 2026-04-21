@@ -990,6 +990,8 @@ bool swift::memberwiseAccessorsRequireActorIsolation(NominalTypeDecl *nominal) {
 
 std::string swift::getDerivedConformanceMacroArg(DerivedConformance &derived,
                                                  ValueDecl *requirement) {
+  bool isUnsafe =
+      derived.Conformance->getExplicitSafety() == ExplicitSafety::Unsafe;
   std::string code = "";
   if (auto *sd = dyn_cast<StructDecl>(derived.Nominal)) {
     code += ".aStruct(members: [";
@@ -1000,7 +1002,12 @@ std::string swift::getDerivedConformanceMacroArg(DerivedConformance &derived,
       auto name = prop->getBaseName().getIdentifier().str().str();
       code += "\n    \"" + name + "\",";
     }
-    code += "])";
+    code += "]";
+
+    if (isUnsafe) {
+      code += ", isUnsafe: true";
+    }
+    code += ")";
   } else if (auto *ed = dyn_cast<EnumDecl>(derived.Nominal)) {
     auto objC = ed->isObjC();
     code += ".anEnum(cases: [";
@@ -1032,9 +1039,13 @@ std::string swift::getDerivedConformanceMacroArg(DerivedConformance &derived,
     if (objC) {
       code += "isObjC: true";
     }
+    if (isUnsafe) {
+      code += ", isUnsafe: true";
+    }
     code += ")";
   } else {
     llvm_unreachable("unexpected nominal type");
   }
+  llvm::errs() << code << "\n";
   return code;
 }
