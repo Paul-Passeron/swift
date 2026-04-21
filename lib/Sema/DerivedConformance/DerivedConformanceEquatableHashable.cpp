@@ -30,6 +30,7 @@
 #include "swift/AST/Identifier.h"
 #include "swift/AST/KnownProtocols.h"
 #include "swift/AST/Module.h"
+#include "swift/AST/NameLookup.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/Pattern.h"
 #include "swift/AST/PrintOptions.h"
@@ -52,6 +53,7 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <unordered_set>
 
 using namespace swift;
 
@@ -628,6 +630,16 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
 
 #else // IN_MEMORY_REPR
 
+static unsigned registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
+                                               DeclContext *parentDc,
+                                               SourceLoc atLoc,
+                                               DerivedConformance &der);
+
+static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
+                                                     ModuleDecl *module,
+                                                     unsigned bufferID,
+                                                     DeclContext *parentDc);
+
 ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   auto atLoc = getValidSourceLocForImplicit(*this, requirement);
   if (requirement->getBaseName() == "==") {
@@ -641,39 +653,15 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
     std::string code = "#deriveEquatable(\n";
     code += getDerivedConformanceMacroArg(*this, requirement);
     code += ")";
-    auto buffer =
-        llvm::MemoryBuffer::getMemBufferCopy(code, getUniqueASTGenBufferName());
 
-    auto bufferID = C.SourceMgr.addNewSourceBuffer(std::move(buffer));
-
-    GeneratedSourceInfo info;
-    info.kind = GeneratedSourceInfo::Kind::
-        DeclarationMacroExpansion; // note: Freestanding, not "Declaration"
-    info.originalSourceRange = CharSourceRange(atLoc, 0);
-    info.generatedSourceRange = C.SourceMgr.getRangeForBuffer(bufferID);
-    info.astNode = 0; // will be filled below
-    info.declContext = parentDc;
-    C.SourceMgr.setGeneratedSourceInfo(bufferID, info);
-
-    auto *SF = new (C) SourceFile(*requirement->getModuleContext(),
-                                  SourceFileKind::DefaultArgument, bufferID);
-    SF->setImports({});
-    auto decls = SF->getTopLevelDecls();
-    assert(decls.size() == 1);
-    auto *decl = decls[0];
-    assert(decl);
-    decl->setImplicit(true);
-    decl->setDeclContext(parentDc);
-    auto *free = dyn_cast<MacroExpansionDecl>(decl);
-    assert(free);
+    auto bufferID =
+        registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, *this);
+    auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
+                                           bufferID, parentDc);
 
     auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
     eInfo->SigilLoc = atLoc;
     eInfo->MacroNameLoc = DeclNameLoc(atLoc);
-
-    auto &gsi = const_cast<GeneratedSourceInfo &>(
-        *C.SourceMgr.getGeneratedSourceInfo(bufferID));
-    gsi.astNode = ASTNode(free).getOpaqueValue();
 
     addMemberToConformanceContext(free, nullptr);
 
@@ -1247,85 +1235,211 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
 
 #else
 
-ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
-  auto *parentDc = this->getConformanceContext();
-  auto &C = parentDc->getASTContext();
-  auto atLoc = getValidSourceLocForImplicit(*this, requirement);
-  // auto DeclNameLoc = [&](SourceLoc loc) { return loc; };
-  std::string code = "";
-  if (requirement->getBaseName() == Context.Id_hashValue) {
-    code += "#deriveHashableHashValue(";
-  } else if (requirement->getBaseName() == Context.Id_hash) {
-    code += "#deriveHashableHash(";
+static std::optional<std::string>
+buildHashableMacroSource(DerivedConformance &derived, ValueDecl *requirement) {
+  auto &ctx = derived.Context;
+
+  std::string code;
+  if (requirement->getBaseName() == ctx.Id_hashValue) {
+    code = "#deriveHashableHashValue(";
+  } else if (requirement->getBaseName() == ctx.Id_hash) {
+    code = "#deriveHashableHash(";
   } else {
     requirement->diagnose(diag::broken_hashable_requirement);
-    return nullptr;
+    return std::nullopt;
   }
-  code += getDerivedConformanceMacroArg(*this, requirement);
+  code += getDerivedConformanceMacroArg(derived, requirement);
   code += ")";
+  return code;
+}
 
+static unsigned registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
+                                               DeclContext *parentDc,
+                                               SourceLoc atLoc,
+                                               DerivedConformance &der) {
   auto buffer =
       llvm::MemoryBuffer::getMemBufferCopy(code, getUniqueASTGenBufferName());
-
-  auto bufferID = C.SourceMgr.addNewSourceBuffer(std::move(buffer));
+  auto bufferID = ctx.SourceMgr.addNewSourceBuffer(std::move(buffer));
 
   GeneratedSourceInfo info;
   info.kind = GeneratedSourceInfo::Kind::DeclarationMacroExpansion;
   info.originalSourceRange = CharSourceRange(atLoc, 0);
-  info.generatedSourceRange = C.SourceMgr.getRangeForBuffer(bufferID);
-  info.astNode = 0; // will be filled below
+  info.generatedSourceRange = ctx.SourceMgr.getRangeForBuffer(bufferID);
+  info.astNode = ASTNode(der.ConformanceDecl).getOpaqueValue();
   info.declContext = parentDc;
-  C.SourceMgr.setGeneratedSourceInfo(bufferID, info);
+  ctx.SourceMgr.setGeneratedSourceInfo(bufferID, info);
 
-  auto *SF = new (C) SourceFile(*requirement->getModuleContext(),
-                                SourceFileKind::DefaultArgument, bufferID);
+  return bufferID;
+}
+
+static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
+                                                     ModuleDecl *module,
+                                                     unsigned bufferID,
+                                                     DeclContext *parentDc) {
+  auto *SF =
+      new (ctx) SourceFile(*module, SourceFileKind::MacroExpansion, bufferID);
   SF->setImports({});
   auto decls = SF->getTopLevelDecls();
   assert(decls.size() == 1);
   auto *decl = decls[0];
-  assert(decl);
   decl->setImplicit(true);
-  decl->setDeclContext(parentDc);
-
   auto *free = dyn_cast<MacroExpansionDecl>(decl);
-  assert(free);
+  assert(free && "Expected a MacroExpansionDecl");
+  return free;
+}
 
-  auto &gsi = const_cast<GeneratedSourceInfo &>(
-      *C.SourceMgr.getGeneratedSourceInfo(bufferID));
-  gsi.astNode = ASTNode(free).getOpaqueValue();
+static void propagateUnsafeAttr(DerivedConformance &derived, ValueDecl *val) {
+  if (!derived.Nominal->getAttrs().hasAttribute<UnsafeAttr>()) {
+    llvm::errs() << "No UnsafeAttr found on nominal type "
+                 << derived.Nominal->getName() << "\n";
+    return;
+  }
+
+  llvm::errs() << "UnsafeAttr found on nominal type "
+               << derived.Nominal->getName() << "\n";
+
+  auto &ctx = derived.Context;
+  if (auto *vd = dyn_cast<VarDecl>(val)) {
+    if (auto *getter = vd->getAccessor(AccessorKind::Get))
+      getter->addAttribute(new (ctx) UnsafeAttr(/*implicit=*/true));
+  }
+}
+
+static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
+                                         ValueDecl *requirement) {
+
+  auto *parentDc = der.getConformanceContext();
+  auto &ctx = parentDc->getASTContext();
+  auto atLoc = getValidSourceLocForImplicit(der, requirement);
+
+  auto code = buildHashableMacroSource(der, requirement);
+  if (!code) {
+    return nullptr;
+  }
+  auto bufferID =
+      registerSynthesizedMacroBuffer(ctx, *code, parentDc, atLoc, der);
+  auto *free = parseSynthesizedMacroDecl(ctx, requirement->getModuleContext(),
+                                         bufferID, parentDc);
 
   auto *eInfo = free->getExpansionInfo();
   eInfo->SigilLoc = atLoc;
   eInfo->MacroNameLoc = DeclNameLoc(atLoc);
 
-  addMemberToConformanceContext(free, nullptr);
-  ValueDecl *val = nullptr;
-  bool ran = false;
+  static std::unordered_set<void *> allDecls;
 
+  der.addMemberToConformanceContext(free, nullptr);
+  // llvm::errs() << "NOMINAL: " << der.Nominal->getName() << "\n";
+  ValueDecl *val = nullptr;
   free->forEachExpandedNode([&](ASTNode node) {
     auto *decl = node.dyn_cast<Decl *>();
-     assert(decl);
-     if (auto *fdecl = dyn_cast<FuncDecl>(decl)) {
-       // hash(into:) path
-       fdecl->setUserAccessible(false);
-       addNonIsolatedToSynthesized(*this, fdecl);
-       ran = true;
-       val = fdecl;
-     } else if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
-       // hashValue path
-       ran = true;
-       vdecl->setUserAccessible(false);
-       vdecl->setImplicit();
-       val = vdecl;
-     } else if (auto *pbd = dyn_cast<PatternBindingDecl>(decl)) {
-       (void)pbd;
-     } else {
-       assert(false && "Unexpected expanded node");
-     }
+    // if (allDecls.find((void*)decl) != allDecls.end()) {
+    //   llvm::errs() << "[FOUND DUPLICATE DECL]: " << (void *)decl << "\n";
+    // }
+    // llvm::errs() << "    DECL: " << (void *)decl << "\n";
+    // llvm::errs() << "    length: " << allDecls.size() << "\n";
+
+    auto thisBuffer =
+        ctx.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
+    auto *SF = ctx.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
+    auto scope = SF->getScope();
+    scope.buildFullyExpandedTree();
+
+    allDecls.insert((void *)decl);
+
+    decl->setDeclContext(der.getConformanceContext());
+    decl->setImplicit(true);
+
+    if (isa<PatternBindingDecl>(decl)) {
+      return;
+    }
+    auto vdecl = dyn_cast<ValueDecl>(decl);
+    assert(vdecl);
+    vdecl->setSynthesized();
+    if (!vdecl->hasAccess()) {
+      vdecl->copyFormalAccessFrom(der.Nominal,
+                                  /*sourceIsParentContext=*/true);
+    } else {
+      vdecl->overwriteAccess(der.Nominal->getFormalAccess());
+    }
+
+    val = vdecl;
+    if (auto fdecl = dyn_cast<AbstractFunctionDecl>(decl)) {
+      propagateUnsafeAttr(der, fdecl);
+
+      addNonIsolatedToSynthesized(der, fdecl);
+    }
+    if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
+
+      vdecl->setInterfaceType(ctx.getIntType());
+      vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
+      propagateUnsafeAttr(der, vdecl);
+      if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
+        getter->setImplicit();
+        getter->setSynthesized();
+        if (!getter->hasAccess()) {
+          getter->copyFormalAccessFrom(der.Nominal,
+                                       /*sourceIsParentContext=*/true);
+        } else {
+          getter->overwriteAccess(der.Nominal->getFormalAccess());
+        }
+        getter->setIsTransparent(false);
+      }
+      val = vdecl;
+    }
+
   });
-  assert(ran);
-  assert(val);
+  auto thisBuffer =
+      ctx.SourceMgr.findBufferContainingLoc(val->getStartLoc());
+  auto *SF = ctx.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
+  auto scope = SF->getScope();
+  scope.buildFullyExpandedTree();
+
+
+
+  assert(val && "Macro expansion did not produce a witness");
   return val;
+}
+
+ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
+  auto *parentDc = getConformanceContext();
+  auto &ctx = parentDc->getASTContext();
+
+  if (requirement->getBaseName() == ctx.Id_hashValue) {
+    return deriveHashableViaMacro(*this, requirement);
+  }
+  if (requirement->getBaseName() == ctx.Id_hash) {
+    auto hashValueReq = getHashValueRequirement(ctx);
+    auto hashValueDecl = Conformance->getWitnessDecl(hashValueReq);
+    if (!hashValueDecl) {
+      return nullptr;
+    }
+
+    if (!hashValueDecl->isImplicit()) {
+      hashValueDecl->diagnose(diag::hashvalue_implementation,
+                              Nominal->getDeclaredType());
+      return deriveHashable_hashInto(*this,
+                                     &deriveBodyHashable_compat_hashInto);
+    }
+
+    auto *hashableProto = ctx.getProtocol(KnownProtocolKind::Hashable);
+    if (!canDeriveConformance(getConformanceContext(), Nominal,
+                              hashableProto)) {
+      ConformanceDecl->diagnose(diag::type_does_not_conform,
+                                Nominal->getDeclaredType(),
+                                hashableProto->getDeclaredInterfaceType());
+      auto *dc = cast<DeclContext>(ConformanceDecl);
+      tryDiagnoseFailedHashableDerivation(dc, Nominal);
+      return nullptr;
+    }
+
+    if (checkAndDiagnoseDisallowedContext(requirement))
+      return nullptr;
+
+    return deriveHashableViaMacro(*this, requirement);
+  }
+
+  requirement->diagnose(diag::broken_hashable_requirement);
+  return nullptr;
 }
 
 #endif

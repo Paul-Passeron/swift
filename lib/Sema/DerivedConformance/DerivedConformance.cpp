@@ -992,20 +992,20 @@ std::string swift::getDerivedConformanceMacroArg(DerivedConformance &derived,
                                                  ValueDecl *requirement) {
   std::string code = "";
   if (auto *sd = dyn_cast<StructDecl>(derived.Nominal)) {
-    code += "    .aStruct(members: [";
+    code += ".aStruct(members: [";
     for (auto prop : sd->getStoredProperties()) {
       if (!prop->isUserAccessible()) {
         continue;
       }
       auto name = prop->getBaseName().getIdentifier().str().str();
-      code += "\n        \"" + name + "\",";
+      code += "\n    \"" + name + "\",";
     }
     code += "])";
   } else if (auto *ed = dyn_cast<EnumDecl>(derived.Nominal)) {
     auto objC = ed->isObjC();
-    code += "    .anEnum(cases: [";
+    code += ".anEnum(cases: [";
     for (const auto *elt : ed->getAllElements()) {
-      code += "\n        (caseName: \"";
+      code += "\n    (caseName: \"";
       code += elt->getBaseIdentifier().str().str();
       code += "\"";
       code += ", argLabels: [";
