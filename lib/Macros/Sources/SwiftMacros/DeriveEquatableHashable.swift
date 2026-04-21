@@ -23,9 +23,9 @@ public struct DeriveEquatableMacro {
 
   static func expandDecl(derived: DerivedNominalKind) -> DeclSyntax {
     switch derived {
-    case .aStruct(let members):
+    case .aStruct(let members, isUnsafe: _):
       return expandStructDecl(members: members)
-    case .anEnum(let cases, isObjC: _):
+    case .anEnum(let cases, isObjC: _, isUnsafe: _):
       return expandEnumDecl(cases: cases)
     }
   }
@@ -50,37 +50,58 @@ extension DeriveHashableHashValueMacro: DeclarationMacro {
     of node: some FreestandingMacroExpansionSyntax,
     in context: some MacroExpansionContext
   ) throws -> [DeclSyntax] {
-    let hashValue: DeclSyntax =
-      """
-      var  hashValue: Int {
-        return _hashValue(for: self)
-      }
-      """
-    return [hashValue]
+    guard let arg = decodeExpansion(expansion: node) else {
+      fatalError("Could not decode expansion")
+    }
+    switch arg {
+    case .aStruct(members: _, let isUnsafe) where isUnsafe,
+      .anEnum(cases: _, isObjC: _, let isUnsafe)
+    where isUnsafe:
+      let hashValue: DeclSyntax =
+        """
+        var  hashValue: Int {
+          return unsafe _hashValue(for: self)
+        }
+        """
+      return [hashValue]
+    default:
+      let hashValue: DeclSyntax =
+        """
+        var  hashValue: Int {
+          return _hashValue(for: self)
+        }
+        """
+      return [hashValue]
+    }
+
   }
 }
 
 public struct DeriveHashableHashMacro {
   static func expandDecl(derived: DerivedNominalKind) -> DeclSyntax {
     switch derived {
-    case .aStruct(let members):
-      return Self.expandStructDecl(members: members)
-    case .anEnum(let cases, let isObjC):
-      return Self.expandEnumDecl(isObjC: isObjC, cases: cases)
+    case .aStruct(let members, let isUnsafe):
+      return Self.expandStructDecl(members: members, isUnsafe: isUnsafe)
+    case .anEnum(let cases, let isObjC, let isUnsafe):
+      return Self.expandEnumDecl(isObjC: isObjC, cases: cases, isUnsafe: isUnsafe)
     }
   }
 
-  static func expandStructDecl(members: [IdentifierPatternSyntax]) -> DeclSyntax {
+  static func expandStructDecl(members: [IdentifierPatternSyntax], isUnsafe: Bool) -> DeclSyntax {
     """
     func hash(into hasher: inout Hasher) {
     \(raw: members.map { member in
-      "    hasher.combine(self.\(member.description))"
+      if isUnsafe {
+        return "    unsafe hasher.combine(self.\(member.description))"
+      } else {
+        return "    hasher.combine(self.\(member.description))"
+      }
     }.joined(separator: "\n"))
     }
     """
   }
 
-  static func expandEnumDecl(isObjC: Bool, cases: [EnumCaseInfo]) -> DeclSyntax {
+  static func expandEnumDecl(isObjC: Bool, cases: [EnumCaseInfo], isUnsafe: Bool) -> DeclSyntax {
     if isObjC {
       return
         """
@@ -94,7 +115,7 @@ public struct DeriveHashableHashMacro {
       func hash(into hasher: inout Hasher) {
         switch (self) {
         \(raw: cases.enumerated().map { (i, theCase) in
-        "\(theCase.getCaseForHashableValue(idx: i))"
+          "\(theCase.getCaseForHashableValue(idx: i, isUnsafe: isUnsafe))"
         }.joined(separator: "\n  "))
         }
       }
@@ -118,16 +139,27 @@ extension EnumCaseInfo {
       """
   }
 
-  func getCombineCalls(_ idx: Int) -> String {
-    """
-        hasher.combine(\(idx))\(
-        argLabels.enumerated().map {(i, _) in
-        "\n    hasher.combine(x\(i))"
-      }.joined(separator: ""))
-    """
+  func getCombineCalls(_ idx: Int, _ isUnsafe: Bool) -> String {
+    if isUnsafe {
+      return
+        """
+            hasher.combine(\(idx))\(
+              argLabels.enumerated().map {(i, _) in
+              "\n    unsafe hasher.combine(x\(i))"
+            }.joined(separator: ""))
+        """
+    } else {
+      return
+        """
+            hasher.combine(\(idx))\(
+              argLabels.enumerated().map {(i, _) in
+              "\n    hasher.combine(x\(i))"
+            }.joined(separator: ""))
+        """
+    }
   }
 
-  func getCaseForHashableValue(idx: Int) -> String {
+  func getCaseForHashableValue(idx: Int, isUnsafe: Bool) -> String {
     if argLabels.isEmpty {
       return "case .\(caseName):\n    hasher.combine(\(idx))"
     }
@@ -141,7 +173,7 @@ extension EnumCaseInfo {
     return
       """
       case \(getCasePattern()):
-      \(getCombineCalls(idx))
+      \(getCombineCalls(idx, isUnsafe))
       """
   }
 }
