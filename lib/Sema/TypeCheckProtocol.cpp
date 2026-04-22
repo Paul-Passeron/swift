@@ -4807,6 +4807,13 @@ deriveProtocolRequirement(const NormalProtocolConformance *Conformance,
 
   DerivedConformance derived(Conformance, TypeDecl, protocol);
 
+  static bool printed = false;
+
+  if (!printed && Conformance->getDeclContext()->getASTContext().LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+    llvm::errs() << "Deriving requirements using macros\n";
+    printed = true;
+  }
+
   switch (*derivableKind) {
   case KnownDerivableProtocolKind::RawRepresentable:
     return derived.deriveRawRepresentable(Requirement);
