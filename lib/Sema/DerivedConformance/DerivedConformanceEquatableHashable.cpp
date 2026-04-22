@@ -641,7 +641,7 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
       return nullptr;
     }
 
-    std::string code = "#deriveEquatable(\n";
+    std::string code = "#deriveComparison(\"==\",\n";
     code += getDerivedConformanceMacroArg(*this, requirement);
     code += ")";
 
@@ -657,9 +657,7 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
     addMemberToConformanceContext(free, nullptr);
 
     ValueDecl *val = nullptr;
-    bool ran = false;
     free->forEachExpandedNode([&](ASTNode node) {
-      ran = true;
       auto *decl = node.dyn_cast<Decl *>();
       assert(decl && "macro expansion node is not a Decl");
       auto *fdecl = dyn_cast<FuncDecl>(decl);
@@ -670,7 +668,6 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
       val = static_cast<ValueDecl *>(fdecl);
       assert(val);
     });
-    assert(ran);
     assert(val);
     return val;
   }
@@ -1243,8 +1240,6 @@ buildHashableMacroSource(DerivedConformance &derived, ValueDecl *requirement) {
   code += ")";
   return code;
 }
-
-
 
 static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
                                          ValueDecl *requirement) {

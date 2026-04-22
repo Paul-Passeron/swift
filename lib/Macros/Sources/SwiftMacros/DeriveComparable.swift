@@ -35,20 +35,41 @@ extension ComparisonKind {
     }
   }
 
-  func functionPrototype(lhsName: String = "a", rhsName: String = "b") -> String? {
+  func resilientName() -> String? {
     switch self {
-    case .equal:
-      """
-      @_implements(Equatable, ==(_:_:))
-      static func __derived_equals(_ \(lhsName): Self, _ \(rhsName): Self) -> Bool
-      """
-    case .lessThan:
-      """
-      @_implements(Comparable, <(_:_:))
-      static func __derived_enum_less_than(_ \(lhsName): Self, _ \(rhsName): Self) -> Bool
-      """
+    case .equal: "__derived_equals"
+    case .lessThan: "__derived_enum_less_than"
     default: nil
     }
+  }
+
+  func protocolName() -> String? {
+    switch self {
+    case .equal: "Equatable"
+    case .lessThan: "Comparable"
+    default: nil
+    }
+  }
+
+  func functionPrototype(lhsName: String = "a", rhsName: String = "b", isResilient: Bool = false)
+    -> String?
+  {
+    guard let resilientName = resilientName() else { return nil }
+    guard let protocolName = protocolName() else { return nil }
+    let symb = symbol()
+    let prologue =
+      if isResilient {
+        symb
+      } else {
+        """
+        @_implements(\(protocolName), \(symb)(_:_:))
+        static func \(resilientName)
+        """
+      }
+    return
+      """
+      \(prologue)(_ \(lhsName): Self, _ \(rhsName): Self) -> Bool
+      """
   }
 }
 
@@ -67,14 +88,12 @@ public struct DeriveComparableConfig {
 extension DeriveComparableConfig {
 
   func generateCompareIndicesSwitchBody(cases: [EnumCaseInfo]) -> String {
-    let defaultCase = if cases.count > 1 { "default: -1" } else { "" }
     let cases: [String] = cases.enumerated().map { (idx, theCase) in
-      return "case \(theCase.caseName): \(idx)"
+      return "case .\(theCase.caseName): \(idx)"
     }
     return
       """
       \(cases.joined(separator: "\n"))
-      \(defaultCase)
       """
   }
 
@@ -174,11 +193,20 @@ extension DeriveComparableConfig {
     }
 
     if self.kind == .equal {
-      return
+      return switch self.nominalKind {
+      case .aStruct:
+        """
+        @EquatableStructMacro
+        \(prototype)
+        """
+      case .anEnum:
         """
         @EquatableEnumMacro
         \(prototype)
         """
+      default: nil
+      }
+
     }
 
     switch self.nominalKind {
