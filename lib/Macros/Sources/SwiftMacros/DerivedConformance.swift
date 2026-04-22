@@ -196,3 +196,11 @@ extension DerivedNominalKind {
     }
   }
 }
+
+func hasNoAssociatedValues(cases: [EnumCaseInfo]) -> Bool {
+  return cases.allSatisfy { $0.argLabels.isEmpty }
+}
+
+func hasUnavailableValues(cases: [EnumCaseInfo]) -> Bool {
+  return cases.contains { $0.isUnavailable }
+}

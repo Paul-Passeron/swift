@@ -32,3 +32,7 @@ public macro deriveHashableHash(_ kind: DerivedNominalKind) =
 @freestanding(declaration, names: named(__derived_equals), named(__derived_enum_less_than))
 public macro deriveComparison(_ comparison: String, _ kind: DerivedNominalKind) =
   #externalMacro(module: "SwiftMacros", type: "DeriveComparisonMacro")
+
+@freestanding(declaration, names: named(allCases))
+public macro deriveCaseIterable(_ kind: DerivedNominalKind) =
+  #externalMacro(module: "SwiftMacros", type: "DeriveCaseIterableMacro")

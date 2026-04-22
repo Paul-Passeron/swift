@@ -14,7 +14,9 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "CodeSynthesis.h"
 #include "DerivedConformance.h"
+#include "DerivedConformanceMacros.h"
 #include "TypeChecker.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/Expr.h"
@@ -35,8 +37,8 @@ static bool canDeriveConformance(NominalTypeDecl *type) {
   // a CaseIterable conformance.
   //
   // FIXME: Lift the availability restriction.
-  return !enumDecl->hasPotentiallyUnavailableCaseValue()
-      && enumDecl->hasOnlyCasesWithoutAssociatedValues();
+  return !enumDecl->hasPotentiallyUnavailableCaseValue() &&
+         enumDecl->hasOnlyCasesWithoutAssociatedValues();
 }
 
 /// Derive the implementation of allCases for a "simple" no-payload enum.
@@ -50,16 +52,16 @@ deriveCaseIterable_enum_getter(AbstractFunctionDecl *funcDecl, void *) {
   SmallVector<Expr *, 8> elExprs;
   for (EnumElementDecl *elt : parentEnum->getAllElements()) {
     auto *base = TypeExpr::createImplicit(enumTy, C);
-    auto *apply = new (C) MemberRefExpr(base, SourceLoc(),
-                                        elt, DeclNameLoc(), /*implicit*/true);
+    auto *apply = new (C)
+        MemberRefExpr(base, SourceLoc(), elt, DeclNameLoc(), /*implicit*/ true);
     elExprs.push_back(apply);
   }
   auto *arrayExpr = ArrayExpr::create(C, SourceLoc(), elExprs, {}, SourceLoc());
 
   auto *returnStmt = ReturnStmt::createImplicit(C, arrayExpr);
-  auto *body = BraceStmt::create(C, SourceLoc(), ASTNode(returnStmt),
-                                 SourceLoc());
-  return { body, /*isTypeChecked=*/false };
+  auto *body =
+      BraceStmt::create(C, SourceLoc(), ASTNode(returnStmt), SourceLoc());
+  return {body, /*isTypeChecked=*/false};
 }
 
 static ArraySliceType *computeAllCasesType(NominalTypeDecl *enumDecl) {
@@ -76,7 +78,72 @@ static Type deriveCaseIterable_AllCases(DerivedConformance &derived) {
   //   typealias AllCases = [SomeEnum]
   // }
   auto *rawInterfaceType = computeAllCasesType(cast<EnumDecl>(derived.Nominal));
-  return derived.getConformanceContext()->mapTypeIntoEnvironment(rawInterfaceType);
+  return derived.getConformanceContext()->mapTypeIntoEnvironment(
+      rawInterfaceType);
+}
+
+static ValueDecl *deriveCaseIterableAllCasesViaMacro(DerivedConformance &der,
+                                                     ValueDecl *requirement) {
+
+  auto *parentDc = der.getConformanceContext();
+  auto &C = parentDc->getASTContext();
+  auto atLoc = der.Nominal->getLoc();
+
+  std::string code = "#deriveCaseIterable(\n";
+  code += getDerivedConformanceMacroArg(der, requirement);
+  code += ")";
+
+  auto bufferID = registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, der);
+  auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
+                                         bufferID, parentDc);
+
+  auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
+  eInfo->SigilLoc = atLoc;
+  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
+
+  der.addMemberToConformanceContext(free, nullptr);
+
+  ValueDecl *val = nullptr;
+  free->forEachExpandedNode([&](ASTNode node) {
+    auto *decl = node.dyn_cast<Decl *>();
+    auto thisBuffer = C.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
+    auto *SF = C.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
+    auto scope = SF->getScope();
+    scope.buildFullyExpandedTree();
+    decl->setDeclContext(der.getConformanceContext());
+    decl->setImplicit(true);
+    if (isa<PatternBindingDecl>(decl)) {
+      return;
+    }
+    auto vdecl = dyn_cast<ValueDecl>(decl);
+    assert(vdecl);
+    vdecl->setSynthesized();
+    if (!vdecl->hasAccess()) {
+      vdecl->copyFormalAccessFrom(der.Nominal,
+                                  /*sourceIsParentContext=*/true);
+    } else {
+      vdecl->overwriteAccess(der.Nominal->getFormalAccess());
+    }
+    val = vdecl;
+    if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
+      vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
+      if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
+        getter->setImplicit();
+        getter->setSynthesized();
+        if (!getter->hasAccess()) {
+          getter->copyFormalAccessFrom(der.Nominal,
+                                       /*sourceIsParentContext=*/true);
+        } else {
+          getter->overwriteAccess(der.Nominal->getFormalAccess());
+        }
+        getter->setIsTransparent(false);
+      }
+      val = vdecl;
+    }
+  });
+
+  assert(val && "Macro expansion did not produce a witness");
+  return val;
 }
 
 ValueDecl *DerivedConformance::deriveCaseIterable(ValueDecl *requirement) {
@@ -96,6 +163,9 @@ ValueDecl *DerivedConformance::deriveCaseIterable(ValueDecl *requirement) {
     return nullptr;
   }
 
+  if (C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+    return deriveCaseIterableAllCasesViaMacro(*this, requirement);
+  }
   // Define the property.
   auto *returnTy = computeAllCasesType(Nominal);
 
@@ -130,4 +200,3 @@ Type DerivedConformance::deriveCaseIterable(AssociatedTypeDecl *assocType) {
                          diag::broken_case_iterable_requirement);
   return nullptr;
 }
-

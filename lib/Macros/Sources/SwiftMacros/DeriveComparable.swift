@@ -114,10 +114,6 @@ extension DeriveComparableConfig {
       """
   }
 
-  static func hasNoAssociatedValues(cases: [EnumCaseInfo]) -> Bool {
-    return cases.allSatisfy { $0.argLabels.isEmpty }
-  }
-
   static func generateRegularSwitchCaseOneSide(name: String, theCase: EnumCaseInfo) -> String {
     if theCase.argLabels.isEmpty {
       return ".\(theCase.caseName)"
@@ -166,7 +162,7 @@ extension DeriveComparableConfig {
 
   func generateLessThanBody(cases: [EnumCaseInfo], isObjC: Bool, isUnsafe: Bool) -> String {
     if cases.isEmpty { return "" }
-    if Self.hasNoAssociatedValues(cases: cases) {
+    if hasNoAssociatedValues(cases: cases) {
       return generateCompareIndices(cases: cases)
     }
     let defaultCase =
