@@ -204,7 +204,6 @@ extension DeriveComparableConfig {
         @EquatableEnumMacro
         \(prototype)
         """
-      default: nil
       }
 
     }

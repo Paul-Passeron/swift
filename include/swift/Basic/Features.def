@@ -627,6 +627,8 @@ EXPERIMENTAL_FEATURE(BorrowingSequence, true)
 /// Turns some source breaking access control warnings into errors.
 EXPERIMENTAL_FEATURE(StrictAccessControl, true)
 
+EXPERIMENTAL_FEATURE(DeriveConformancesViaMacros, false)
+
 #undef EXPERIMENTAL_FEATURE_EXCLUDED_FROM_MODULE_INTERFACE
 #undef EXPERIMENTAL_FEATURE
 #undef UPCOMING_FEATURE

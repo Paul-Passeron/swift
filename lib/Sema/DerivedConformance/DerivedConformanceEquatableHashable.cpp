@@ -91,8 +91,6 @@ bool DerivedConformance::canDeriveEquatable(DeclContext *DC,
   return canDeriveConformance(DC, type, equatableProto);
 }
 
-#ifdef DO_NOT_USE_MACROS
-
 static std::pair<BraceStmt *, bool>
 deriveBodyEquatable_enum_uninhabited_eq(AbstractFunctionDecl *eqDecl, void *) {
   auto parentDC = eqDecl->getDeclContext();
@@ -459,29 +457,6 @@ static ValueDecl *deriveEquatable_eq(
   return eqDecl;
 }
 
-ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
-  if (checkAndDiagnoseDisallowedContext(requirement))
-    return nullptr;
-
-  // Build the necessary decl.
-  if (requirement->getBaseName() == "==") {
-    if (auto ed = dyn_cast<EnumDecl>(Nominal)) {
-      auto bodySynthesizer =
-          !ed->hasCases() ? &deriveBodyEquatable_enum_uninhabited_eq
-          : ed->hasOnlyCasesWithoutAssociatedValues()
-              ? &deriveBodyEquatable_enum_noAssociatedValues_eq
-              : &deriveBodyEquatable_enum_hasAssociatedValues_eq;
-      return deriveEquatable_eq(*this, bodySynthesizer);
-    } else if (isa<StructDecl>(Nominal))
-      return deriveEquatable_eq(*this, &deriveBodyEquatable_struct_eq);
-    else
-      llvm_unreachable("todo");
-  }
-  requirement->diagnose(diag::broken_equatable_requirement);
-  return nullptr;
-}
-#else
-
 static SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived,
                                               ValueDecl *requirement) {
   auto atLoc = derived.Conformance->getLoc();
@@ -504,181 +479,72 @@ static SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived,
   return atLoc;
 }
 
-#define USE_SWIFT_MACROS
-#ifndef USE_SWIFT_MACROS
-
-ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
-  if (requirement->getBaseName() == "==") {
-    auto *dc = this->getConformanceContext();
-    auto &C = dc->getASTContext();
-
-    if (!C.getEqualIntDecl()) {
-      ConformanceDecl->diagnose(diag::no_equal_overload_for_int);
-      return nullptr;
-    }
-
-    auto atLoc = getValidSourceLocForImplicit(*this, requirement);
-    auto declName = DeclName(C.getIdentifier("EquatableDeclMacro"));
-    auto declNameRef = DeclNameRef(C, Identifier(), declName);
-    MacroExpansionDecl *free = MacroExpansionDecl::create(
-        dc, atLoc, declNameRef, DeclNameLoc(atLoc), SourceLoc(),
-        ArrayRef<TypeRepr *>(), SourceLoc(), nullptr);
-    ValueDecl *val = nullptr;
-    free->setImplicit(true);
-    free->setDeclContext(dc);
-    addMemberToConformanceContext(dyn_cast<Decl>(free), nullptr);
-
-    // Contains a single node
-    free->forEachExpandedNode([&](ASTNode node) {
-      auto *decl = node.dyn_cast<Decl *>();
-      assert(decl && "macro expansion node is not a Decl");
-      auto *fdecl = dyn_cast<FuncDecl>(decl);
-      assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
-      fdecl->setUserAccessible(false);
-      addNonIsolatedToSynthesized(*this, fdecl);
-      val = static_cast<ValueDecl *>(fdecl);
-    });
-    return val;
-  }
-  requirement->diagnose(diag::broken_equatable_requirement);
-  return nullptr;
-}
-#else // USE_SWIFT_MACROS
-// #define IN_MEMORY_REPR
-#ifdef IN_MEMORY_REPR
-
-// Creates the argument used in the #deriveEquatable macro
-// to derive the Equatable conformance, passing along type infos
-// eg. for an enum:
-// .anEnum(cases: [
-//   EnumCaseInfo.new(caseName: "foo"),
-//   EnumCaseInfo.new(caseName: "bar", argLabels: [nil]),
-//   EnumCaseInfo.new(caseName: "foo", argLabels: ["x", "y", nil],
-//   isUnavailable: false),
-// ]))
-//
-// for a struct:
-// .aStruct(members: ["foo", "bar", "baz"])
-static Expr *createArg(DerivedConformance &der, ValueDecl *requirement,
-                       SourceLoc atLoc) {
+static ValueDecl *deriveEquatableViaMacro(DerivedConformance &der,
+                                          ValueDecl *requirement) {
   auto *parentDc = der.getConformanceContext();
   auto &C = parentDc->getASTContext();
-  if (auto *sd = dyn_cast<StructDecl>(der.Nominal)) {
-    SmallVector<Expr *, 2> props;
-    for (auto prop : sd->getStoredProperties()) {
-      if (!prop->isUserAccessible()) {
-        continue;
-      }
-      auto name = prop->getBaseName().getIdentifier().str();
-      auto sLit = new (C) StringLiteralExpr(name, SourceRange(atLoc, atLoc),
-                                            /*isImplicit=*/true);
-      props.push_back(sLit);
-    }
-    auto fn = new (C)
-        UnresolvedMemberExpr(atLoc, DeclNameLoc(atLoc),
-                             DeclNameRef(C.getIdentifier("aStruct")), true);
-    auto arrayExpr = ArrayExpr::create(C, SourceLoc(atLoc), props,
-                                       ArrayRef<SourceLoc>(), SourceLoc(atLoc));
-    arrayExpr->setImplicit(true);
-    auto argList = ArgumentList::forImplicitSingle(
-        C, C.getIdentifier("members"), arrayExpr);
-    auto call = CallExpr::createImplicit(C, fn, argList);
-    return call;
-  }
-  if (isa<EnumDecl>(der.Nominal)) {
-    llvm_unreachable("[createArg] TODO: use Swift Macros for enum");
-  }
-  llvm_unreachable("[createArg] TODO: use Swift Macros");
+  auto atLoc = getValidSourceLocForImplicit(der, requirement);
+
+  std::string code = "#deriveComparison(\"==\",\n";
+  code += getDerivedConformanceMacroArg(der, requirement);
+  code += ")";
+
+  auto bufferID = registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, der);
+  auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
+                                         bufferID, parentDc);
+
+  auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
+  eInfo->SigilLoc = atLoc;
+  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
+
+  der.addMemberToConformanceContext(free, nullptr);
+
+  ValueDecl *val = nullptr;
+  free->forEachExpandedNode([&](ASTNode node) {
+    auto *decl = node.dyn_cast<Decl *>();
+    assert(decl && "macro expansion node is not a Decl");
+    auto *fdecl = dyn_cast<FuncDecl>(decl);
+    assert(fdecl);
+    assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
+    fdecl->setUserAccessible(false);
+    addNonIsolatedToSynthesized(der, fdecl);
+    val = static_cast<ValueDecl *>(fdecl);
+    assert(val);
+  });
+  assert(val);
+  return val;
 }
 
 ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
-  if (requirement->getBaseName() == "==") {
-    auto *parentDc = this->getConformanceContext();
-    auto &C = parentDc->getASTContext();
-    if (!C.getEqualIntDecl()) {
-      ConformanceDecl->diagnose(diag::no_equal_overload_for_int);
-      return nullptr;
-    }
-    auto atLoc = getValidSourceLocForImplicit(*this, requirement);
-    auto declName = DeclName(C.getIdentifier("deriveEquatable"));
-    auto declNameRef = DeclNameRef(C, Identifier(), declName);
-    auto *argList = ArgumentList::forImplicitSingle(
-        C, Identifier(), createArg(*this, requirement));
-    MacroExpansionDecl *free = MacroExpansionDecl::create(
-        parentDc, SourceLoc(), declNameRef, DeclNameLoc(), SourceLoc(),
-        ArrayRef<TypeRepr *>(), SourceLoc(), argList);
-    ValueDecl *val = nullptr;
-    free->setImplicit(true);
-    free->setDeclContext(parentDc);
-    addMemberToConformanceContext(dyn_cast<Decl>(free), nullptr);
 
-    // Contains a single node
-    free->forEachExpandedNode([&](ASTNode node) {
-      auto *decl = node.dyn_cast<Decl *>();
-      assert(decl && "macro expansion node is not a Decl");
-      auto *fdecl = dyn_cast<FuncDecl>(decl);
-      assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
-      fdecl->setUserAccessible(false);
-      addNonIsolatedToSynthesized(*this, fdecl);
-      val = static_cast<ValueDecl *>(fdecl);
-    });
-    return val;
-  }
-  requirement->diagnose(diag::broken_equatable_requirement);
-  return nullptr;
-}
-
-#else // IN_MEMORY_REPR
-
-ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   auto *parentDc = this->getConformanceContext();
   auto &C = parentDc->getASTContext();
-
-  auto atLoc = getValidSourceLocForImplicit(*this, requirement);
-  if (requirement->getBaseName() == "==") {
-    if (!C.getEqualIntDecl()) {
-      ConformanceDecl->diagnose(diag::no_equal_overload_for_int);
-      return nullptr;
-    }
-
-    std::string code = "#deriveComparison(\"==\",\n";
-    code += getDerivedConformanceMacroArg(*this, requirement);
-    code += ")";
-
-    auto bufferID =
-        registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, *this);
-    auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
-                                           bufferID, parentDc);
-
-    auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
-    eInfo->SigilLoc = atLoc;
-    eInfo->MacroNameLoc = DeclNameLoc(atLoc);
-
-    addMemberToConformanceContext(free, nullptr);
-
-    ValueDecl *val = nullptr;
-    free->forEachExpandedNode([&](ASTNode node) {
-      auto *decl = node.dyn_cast<Decl *>();
-      assert(decl && "macro expansion node is not a Decl");
-      auto *fdecl = dyn_cast<FuncDecl>(decl);
-      assert(fdecl);
-      assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
-      fdecl->setUserAccessible(false);
-      addNonIsolatedToSynthesized(*this, fdecl);
-      val = static_cast<ValueDecl *>(fdecl);
-      assert(val);
-    });
-    assert(val);
-    return val;
+  if (checkAndDiagnoseDisallowedContext(requirement))
+    return nullptr;
+  if (!C.getEqualIntDecl()) {
+    ConformanceDecl->diagnose(diag::no_equal_overload_for_int);
+    return nullptr;
   }
-
+  if (requirement->getBaseName() == "==") {
+    if (C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+      return deriveEquatableViaMacro(*this, requirement);
+    }
+    // Build the necessary decl.
+    if (auto ed = dyn_cast<EnumDecl>(Nominal)) {
+      auto bodySynthesizer =
+          !ed->hasCases() ? &deriveBodyEquatable_enum_uninhabited_eq
+          : ed->hasOnlyCasesWithoutAssociatedValues()
+              ? &deriveBodyEquatable_enum_noAssociatedValues_eq
+              : &deriveBodyEquatable_enum_hasAssociatedValues_eq;
+      return deriveEquatable_eq(*this, bodySynthesizer);
+    }
+    if (isa<StructDecl>(Nominal))
+      return deriveEquatable_eq(*this, &deriveBodyEquatable_struct_eq);
+    llvm_unreachable("todo");
+  }
   requirement->diagnose(diag::broken_equatable_requirement);
   return nullptr;
 }
-
-#endif // IN_MEMORY_REPR
-#endif // USE_SWIFT_MACROS
-#endif // USE_MACROS
 
 void DerivedConformance::tryDiagnoseFailedEquatableDerivation(
     DeclContext *DC, NominalTypeDecl *nominal) {
@@ -818,8 +684,8 @@ deriveBodyHashable_enum_rawValue_hashInto(AbstractFunctionDecl *hashIntoDecl,
   return {body, /*isTypeChecked=*/false};
 }
 
-/// Derive the body for the 'hash(into:)' method for an enum without associated
-/// values.
+/// Derive the body for the 'hash(into:)' method for an enum without
+/// associated values.
 static std::pair<BraceStmt *, bool>
 deriveBodyHashable_enum_noAssociatedValues_hashInto(
     AbstractFunctionDecl *hashIntoDecl, void *) {
@@ -893,8 +759,8 @@ deriveBodyHashable_enum_hasAssociatedValues_hashInto(
   unsigned index = 0;
   SmallVector<CaseStmt *, 4> cases;
 
-  // For each enum element, generate a case statement that binds the associated
-  // values so that they can be fed to the hasher.
+  // For each enum element, generate a case statement that binds the
+  // associated values so that they can be fed to the hasher.
   for (auto elt : enumDecl->getAllElements()) {
     if (auto *unavailableElementCase =
             DerivedConformance::unavailableEnumElementCaseStmt(enumType, elt,
@@ -1143,86 +1009,6 @@ void DerivedConformance::tryDiagnoseFailedHashableDerivation(
   diagnoseIfSynthesisUnsupportedForDecl(nominal, hashableProto);
 }
 
-#ifdef DO_NOT_USE_MACROS
-
-ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
-  // var hashValue: Int
-  if (requirement->getBaseName() == Context.Id_hashValue) {
-    // We always allow hashValue to be synthesized; invalid cases are diagnosed
-    // during hash(into:) synthesis.
-    return deriveHashable_hashValue(*this);
-  }
-
-  // Hashable.hash(into:)
-  if (requirement->getBaseName() == Context.Id_hash) {
-    // Start by resolving hashValue conformance.
-    auto hashValueReq = getHashValueRequirement(Context);
-    auto hashValueDecl = Conformance->getWitnessDecl(hashValueReq);
-    if (!hashValueDecl) {
-      // We won't derive hash(into:) if hashValue cannot be resolved.
-      // The hashValue failure will produce a diagnostic elsewhere.
-      return nullptr;
-    }
-    if (hashValueDecl->isImplicit()) {
-      // Neither hashValue nor hash(into:) is explicitly defined; we need to do
-      // a full Hashable derivation.
-
-      // Refuse to synthesize Hashable if type isn't a struct or enum, or if it
-      // has non-Hashable stored properties/associated values.
-      auto hashableProto = Context.getProtocol(KnownProtocolKind::Hashable);
-      if (!canDeriveConformance(getConformanceContext(), Nominal,
-                                hashableProto)) {
-        ConformanceDecl->diagnose(diag::type_does_not_conform,
-                                  Nominal->getDeclaredType(),
-                                  hashableProto->getDeclaredInterfaceType());
-        // Ideally, this would be diagnosed in
-        // ConformanceChecker::resolveWitnessViaLookup. That doesn't work for
-        // Hashable because DerivedConformance::canDeriveHashable returns true
-        // even if the conformance can't be derived. See the note there for
-        // details.
-        auto *dc = cast<DeclContext>(ConformanceDecl);
-        tryDiagnoseFailedHashableDerivation(dc, Nominal);
-        return nullptr;
-      }
-
-      if (checkAndDiagnoseDisallowedContext(requirement))
-        return nullptr;
-
-      if (auto ED = dyn_cast<EnumDecl>(Nominal)) {
-        std::pair<BraceStmt *, bool> (*bodySynthesizer)(AbstractFunctionDecl *,
-                                                        void *);
-        if (ED->isObjC())
-          bodySynthesizer = deriveBodyHashable_enum_rawValue_hashInto;
-        else if (ED->hasOnlyCasesWithoutAssociatedValues())
-          bodySynthesizer = deriveBodyHashable_enum_noAssociatedValues_hashInto;
-        else
-          bodySynthesizer =
-              deriveBodyHashable_enum_hasAssociatedValues_hashInto;
-        return deriveHashable_hashInto(*this, bodySynthesizer);
-      }
-      if (isa<StructDecl>(Nominal))
-        return deriveHashable_hashInto(*this,
-                                       &deriveBodyHashable_struct_hashInto);
-      // This should've been caught by canDeriveHashable above.
-      llvm_unreachable("Attempt to derive Hashable for a type other "
-                       "than a struct or enum");
-    } else {
-      // hashValue has an explicit implementation, but hash(into:) doesn't.
-      // Emit a deprecation warning, then derive hash(into:) in terms of
-      // hashValue.
-      hashValueDecl->diagnose(diag::hashvalue_implementation,
-                              Nominal->getDeclaredType());
-      return deriveHashable_hashInto(*this,
-                                     &deriveBodyHashable_compat_hashInto);
-    }
-  }
-
-  requirement->diagnose(diag::broken_hashable_requirement);
-  return nullptr;
-}
-
-#else
-
 static std::optional<std::string>
 buildHashableMacroSource(DerivedConformance &derived, ValueDecl *requirement) {
   auto &ctx = derived.Context;
@@ -1317,49 +1103,130 @@ static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
   return val;
 }
 
-ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
-  auto *parentDc = getConformanceContext();
-  auto &ctx = parentDc->getASTContext();
-
-  if (requirement->getBaseName() == ctx.Id_hashValue) {
-    return deriveHashableViaMacro(*this, requirement);
+static ValueDecl *deriveHashable(DerivedConformance &der,
+                                 ValueDecl *requirement) {
+  // var hashValue: Int
+  if (requirement->getBaseName() == der.Context.Id_hashValue) {
+    // We always allow hashValue to be synthesized; invalid cases are
+    // diagnosed during hash(into:) synthesis.
+    return deriveHashable_hashValue(der);
   }
-  if (requirement->getBaseName() == ctx.Id_hash) {
-    auto hashValueReq = getHashValueRequirement(ctx);
-    auto hashValueDecl = Conformance->getWitnessDecl(hashValueReq);
+
+  // Hashable.hash(into:)
+  if (requirement->getBaseName() == der.Context.Id_hash) {
+    // Start by resolving hashValue conformance.
+    auto hashValueReq = getHashValueRequirement(der.Context);
+    auto hashValueDecl = der.Conformance->getWitnessDecl(hashValueReq);
     if (!hashValueDecl) {
+      // We won't derive hash(into:) if hashValue cannot be resolved.
+      // The hashValue failure will produce a diagnostic elsewhere.
       return nullptr;
     }
+    if (hashValueDecl->isImplicit()) {
+      // Neither hashValue nor hash(into:) is explicitly defined; we need to
+      // do a full Hashable derivation.
 
-    if (!hashValueDecl->isImplicit()) {
+      // Refuse to synthesize Hashable if type isn't a struct or enum, or if
+      // it has non-Hashable stored properties/associated values.
+      auto hashableProto = der.Context.getProtocol(KnownProtocolKind::Hashable);
+      if (!canDeriveConformance(der.getConformanceContext(), der.Nominal,
+                                hashableProto)) {
+        der.ConformanceDecl->diagnose(
+            diag::type_does_not_conform, der.Nominal->getDeclaredType(),
+            hashableProto->getDeclaredInterfaceType());
+        // Ideally, this would be diagnosed in
+        // ConformanceChecker::resolveWitnessViaLookup. That doesn't work for
+        // Hashable because DerivedConformance::canDeriveHashable returns true
+        // even if the conformance can't be derived. See the note there for
+        // details.
+        auto *dc = cast<DeclContext>(der.ConformanceDecl);
+        der.tryDiagnoseFailedHashableDerivation(dc, der.Nominal);
+        return nullptr;
+      }
+
+      if (der.checkAndDiagnoseDisallowedContext(requirement))
+        return nullptr;
+
+      if (auto ED = dyn_cast<EnumDecl>(der.Nominal)) {
+        std::pair<BraceStmt *, bool> (*bodySynthesizer)(AbstractFunctionDecl *,
+                                                        void *);
+        if (ED->isObjC())
+          bodySynthesizer = deriveBodyHashable_enum_rawValue_hashInto;
+        else if (ED->hasOnlyCasesWithoutAssociatedValues())
+          bodySynthesizer = deriveBodyHashable_enum_noAssociatedValues_hashInto;
+        else
+          bodySynthesizer =
+              deriveBodyHashable_enum_hasAssociatedValues_hashInto;
+        return deriveHashable_hashInto(der, bodySynthesizer);
+      }
+      if (isa<StructDecl>(der.Nominal))
+        return deriveHashable_hashInto(der,
+                                       &deriveBodyHashable_struct_hashInto);
+      // This should've been caught by canDeriveHashable above.
+      llvm_unreachable("Attempt to derive Hashable for a type other "
+                       "than a struct or enum");
+    } else {
+      // hashValue has an explicit implementation, but hash(into:) doesn't.
+      // Emit a deprecation warning, then derive hash(into:) in terms of
+      // hashValue.
       hashValueDecl->diagnose(diag::hashvalue_implementation,
-                              Nominal->getDeclaredType());
-      return deriveHashable_hashInto(*this,
-                                     &deriveBodyHashable_compat_hashInto);
+                              der.Nominal->getDeclaredType());
+      return deriveHashable_hashInto(der, &deriveBodyHashable_compat_hashInto);
     }
-
-    auto *hashableProto = ctx.getProtocol(KnownProtocolKind::Hashable);
-    if (!canDeriveConformance(getConformanceContext(), Nominal,
-                              hashableProto)) {
-      ConformanceDecl->diagnose(diag::type_does_not_conform,
-                                Nominal->getDeclaredType(),
-                                hashableProto->getDeclaredInterfaceType());
-      auto *dc = cast<DeclContext>(ConformanceDecl);
-      tryDiagnoseFailedHashableDerivation(dc, Nominal);
-      return nullptr;
-    }
-
-    if (checkAndDiagnoseDisallowedContext(requirement))
-      return nullptr;
-
-    return deriveHashableViaMacro(*this, requirement);
   }
 
   requirement->diagnose(diag::broken_hashable_requirement);
   return nullptr;
 }
 
-#endif
+static ValueDecl *deriveHashableReqViaMacro(DerivedConformance &der,
+                                            ValueDecl *requirement) {
+  auto *parentDc = der.getConformanceContext();
+  auto &ctx = parentDc->getASTContext();
+  if (requirement->getBaseName() == ctx.Id_hashValue) {
+    return deriveHashableViaMacro(der, requirement);
+  }
+  if (requirement->getBaseName() == ctx.Id_hash) {
+    auto hashValueReq = getHashValueRequirement(ctx);
+    auto hashValueDecl = der.Conformance->getWitnessDecl(hashValueReq);
+    if (!hashValueDecl) {
+      return nullptr;
+    }
+
+    if (!hashValueDecl->isImplicit()) {
+      hashValueDecl->diagnose(diag::hashvalue_implementation,
+                              der.Nominal->getDeclaredType());
+      return deriveHashable_hashInto(der, &deriveBodyHashable_compat_hashInto);
+    }
+
+    auto *hashableProto = ctx.getProtocol(KnownProtocolKind::Hashable);
+    if (!canDeriveConformance(der.getConformanceContext(), der.Nominal,
+                              hashableProto)) {
+      der.ConformanceDecl->diagnose(diag::type_does_not_conform,
+                                der.Nominal->getDeclaredType(),
+                                hashableProto->getDeclaredInterfaceType());
+      auto *dc = cast<DeclContext>(der.ConformanceDecl);
+      der.tryDiagnoseFailedHashableDerivation(dc, der.Nominal);
+      return nullptr;
+    }
+
+    if (der.checkAndDiagnoseDisallowedContext(requirement))
+      return nullptr;
+
+    return deriveHashableViaMacro(der, requirement);
+  }
+  requirement->diagnose(diag::broken_hashable_requirement);
+  return nullptr;
+}
+
+ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
+  auto *parentDc = getConformanceContext();
+  auto &ctx = parentDc->getASTContext();
+  if (ctx.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+    return deriveHashableReqViaMacro(*this, requirement);
+  }
+  return ::deriveHashable(*this, requirement);
+}
 
 std::unique_ptr<llvm::MemoryBuffer> swift::evaluateEquatableEnumMacroBuffer(
     ASTContext &ctx,

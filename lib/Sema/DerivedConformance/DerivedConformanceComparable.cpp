@@ -283,7 +283,51 @@ bool DerivedConformance::canDeriveComparable(DeclContext *context,
                                               comparable) &&
          !enumeration->hasRawType();
 }
-#ifdef DO_NOT_USE_MACROS
+
+static ValueDecl *deriveComparableViaMacros(DerivedConformance &der,
+                                            ValueDecl *requirement) {
+  if (der.checkAndDiagnoseDisallowedContext(requirement)) {
+    return nullptr;
+  }
+  if (requirement->getBaseName() != "<") {
+    requirement->diagnose(diag::broken_comparable_requirement);
+    return nullptr;
+  }
+
+  auto atLoc = der.Nominal->getLoc();
+  auto *parentDc = der.getConformanceContext();
+  auto &C = parentDc->getASTContext();
+
+  std::string code = "#deriveComparison(\"<\",\n";
+  code += getDerivedConformanceMacroArg(der, requirement);
+  code += ")";
+
+  auto bufferID = registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, der);
+  auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
+                                         bufferID, parentDc);
+
+  auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
+  eInfo->SigilLoc = atLoc;
+  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
+
+  der.addMemberToConformanceContext(free, nullptr);
+
+  ValueDecl *val = nullptr;
+  free->forEachExpandedNode([&](ASTNode node) {
+    auto *decl = node.dyn_cast<Decl *>();
+    assert(decl && "macro expansion node is not a Decl");
+    auto *fdecl = dyn_cast<FuncDecl>(decl);
+    assert(fdecl);
+    assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
+    fdecl->setUserAccessible(false);
+    addNonIsolatedToSynthesized(der, fdecl);
+    val = static_cast<ValueDecl *>(fdecl);
+    assert(val);
+  });
+  assert(val);
+  return val;
+}
+
 ValueDecl *DerivedConformance::deriveComparable(ValueDecl *requirement) {
   if (checkAndDiagnoseDisallowedContext(requirement)) {
     return nullptr;
@@ -291,6 +335,12 @@ ValueDecl *DerivedConformance::deriveComparable(ValueDecl *requirement) {
   if (requirement->getBaseName() != "<") {
     requirement->diagnose(diag::broken_comparable_requirement);
     return nullptr;
+  }
+  auto *parentDc = getConformanceContext();
+  auto &C = parentDc->getASTContext();
+
+  if (C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+    return deriveComparableViaMacros(*this, requirement);
   }
 
   // Build the necessary decl.
@@ -309,55 +359,7 @@ ValueDecl *DerivedConformance::deriveComparable(ValueDecl *requirement) {
   }
   return deriveComparable_lt(*this, synthesizer);
 }
-#else // DO_NOT_USE_MACROS
-ValueDecl *DerivedConformance::deriveComparable(ValueDecl *requirement) {
-  if (checkAndDiagnoseDisallowedContext(requirement)) {
-    return nullptr;
-  }
-  if (requirement->getBaseName() != "<") {
-    requirement->diagnose(diag::broken_comparable_requirement);
-    return nullptr;
-  }
 
-  auto atLoc = Nominal->getLoc();
-  auto *parentDc = this->getConformanceContext();
-  auto &C = parentDc->getASTContext();
-
-  std::string code = "#deriveComparison(\"<\",\n";
-  code += getDerivedConformanceMacroArg(*this, requirement);
-  code += ")";
-
-  auto bufferID =
-      registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, *this);
-  auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
-                                         bufferID, parentDc);
-
-  auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
-  eInfo->SigilLoc = atLoc;
-  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
-
-  addMemberToConformanceContext(free, nullptr);
-
-  ValueDecl *val = nullptr;
-  bool ran = false;
-  free->forEachExpandedNode([&](ASTNode node) {
-    ran = true;
-    auto *decl = node.dyn_cast<Decl *>();
-    assert(decl && "macro expansion node is not a Decl");
-    auto *fdecl = dyn_cast<FuncDecl>(decl);
-    assert(fdecl);
-    assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
-    fdecl->setUserAccessible(false);
-    addNonIsolatedToSynthesized(*this, fdecl);
-    val = static_cast<ValueDecl *>(fdecl);
-    assert(val);
-  });
-  assert(ran);
-  assert(val);
-  return val;
-}
-
-#endif // DO_NOT_USE_MACROS
 void DerivedConformance::tryDiagnoseFailedComparableDerivation(
     DeclContext *DC, NominalTypeDecl *nominal) {
   auto &ctx = DC->getASTContext();
