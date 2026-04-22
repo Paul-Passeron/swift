@@ -176,15 +176,13 @@ extension DeriveComparableConfig {
           \(generateCompareIndices(cases: cases))
         """
       } else { "" }
-    let res =
+    return
       """
       switch (\(lhsName), \(rhsName)) {
       \(Self.generateRegularSwitchCases(cases: cases))
       \(defaultCase)
       }
       """
-    print(res)
-    return res
   }
 
   func expansionText() -> String? {
