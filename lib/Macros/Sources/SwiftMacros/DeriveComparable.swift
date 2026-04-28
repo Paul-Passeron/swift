@@ -187,19 +187,11 @@ extension DeriveComparableConfig {
     }
 
     if self.kind == .equal {
-      return switch self.nominalKind {
-      case .aStruct:
+      return
         """
         @deriveEquatableBody(\(self.nominalKind.asExprSyntax()))
         \(prototype)
         """
-      case .anEnum:
-        """
-        @EquatableEnumMacro
-        \(prototype)
-        """
-      }
-
     }
 
     switch self.nominalKind {

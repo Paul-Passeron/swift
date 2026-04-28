@@ -5,7 +5,8 @@ import SwiftSyntaxMacros
 
 public struct DeriveEquatableMacro {
 
-  static func expandStructDecl(members: [IdentifierPatternSyntax], desc: DerivedNominalKind) -> DeclSyntax
+  static func expandStructDecl(members: [IdentifierPatternSyntax], desc: DerivedNominalKind)
+    -> DeclSyntax
   {
     """
     @_implements(Equatable, ==(_:_:))
@@ -211,26 +212,32 @@ public struct DeriveEquatableBodyMacro: BodyMacro {
     in context: some MacroExpansionContext
   ) throws -> [CodeBlockItemSyntax] {
     guard let args = node.arguments else {
-      return []
+      fatalError("Internal error: Should have been arguments there !")
     }
     let arg: ExprSyntax =
       """
       \(args)
       """
-    guard let arg = decodeExpansionArg(arg: arg) else { return [] }
+    guard let arg = decodeExpansionArg(arg: arg) else {
+      fatalError("Internal error: Could not decode expansion arg:\n\(arg.description)\n\n\(arg)")
+    }
     return deriveBody(arg)
   }
 }
 
 extension DeriveEquatableBodyMacro {
   static func deriveBody(_ arg: DerivedNominalKind) -> [CodeBlockItemSyntax] {
-    switch arg {
-    case .aStruct(let members, isUnsafe: _):
-      return deriveStructBody(members.map { $0.description })
-    case .anEnum(let cases, let isObjC, isUnsafe: _):
-      fatalError("TODO: enums")
-
-    }
+    let body =
+      switch arg {
+      case .aStruct(let members, isUnsafe: _):
+        deriveStructBody(members.map { $0.description })
+      case .anEnum(let cases, let isObjC, isUnsafe: _):
+        deriveEnumBody(cases: cases, isObjC: isObjC)
+      }
+    print("=Eq Body================================")
+    print(body.description)
+    print("========================================")
+    return body
   }
 
   static func deriveStructBody(_ members: [String]) -> [CodeBlockItemSyntax] {
@@ -243,5 +250,77 @@ extension DeriveEquatableBodyMacro {
       return true
       """
     ]
+  }
+
+  static func getDiscriminator(varName: String, scrutinee: String, caseNames: [String])
+    -> CodeBlockItemSyntax
+  {
+    return
+      """
+      let \(raw: varName) = switch \(raw: scrutinee) {
+      \(raw: caseNames.enumerated().map { idx, caseName in "case .\(caseName): \(idx)" }.joined(separator: "\n"))
+      }
+      """
+  }
+
+  static func deriveEnumBody(cases: [EnumCaseInfo], isObjC: Bool) -> [CodeBlockItemSyntax] {
+    let hasNoAssociatedValues = cases.allSatisfy { $0.argLabels.isEmpty }
+    if hasNoAssociatedValues {
+      let caseNames = cases.map { $0.caseName.description }
+      return [
+        getDiscriminator(
+          varName: "__a_discr", scrutinee: "a", caseNames: caseNames),
+        getDiscriminator(
+          varName: "__b_discr", scrutinee: "b", caseNames: caseNames),
+        """
+        return __a_discr == __b_discr
+        """,
+      ]
+    } else {
+      let defaultCase =
+        if cases.count > 1 {
+          """
+          default: return false
+          """
+        } else {
+          ""
+        }
+      let switchStmt = """
+        switch (a, b) {
+        \(raw: cases.map {
+        theCase in
+        """
+        case (\(theCase.asPattern(varPrefix: "l")), \(theCase.asPattern(varPrefix: "r"))):
+        \(theCase.argLabels.enumerated().map { idx, c in
+        """
+        guard l\(idx) == r\(idx) else { return false }
+        """
+        }.joined(separator: "\n"))
+        return true
+        """
+        }.joined(separator: "\n"))
+        \(raw: defaultCase)
+        }
+        """ as CodeBlockItemSyntax
+      return [switchStmt]
+    }
+  }
+}
+
+extension EnumCaseInfo {
+  func asPattern(varPrefix: String) -> String {
+    if argLabels.isEmpty {
+      return ".\(caseName.description)"
+    } else {
+      let elems = argLabels.enumerated().map {
+        idx, lbl in
+        if let lbl = lbl {
+          return "\(lbl): let \(varPrefix)\(idx)"
+        } else {
+          return "let \(varPrefix)\(idx)"
+        }
+      }.joined(separator: ", ")
+      return ".\(caseName.description)(\(elems))"
+    }
   }
 }

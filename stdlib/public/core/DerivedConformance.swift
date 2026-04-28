@@ -14,6 +14,7 @@ public macro EquatableDeclMacro() = Builtin.DerivedConformanceMacro
   case aStruct(members: [String], isUnsafe: Bool = false)
   case anEnum(
     cases: [(caseName: String, argLabels: [String?], isUnavailable: Bool)],
+    isObjC: Bool = false,
     isUnsafe: Bool = false)
 }
 

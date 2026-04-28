@@ -170,7 +170,7 @@ extension EnumCaseInfo {
     let argLabelsAsStr = "[\(self.argLabels.map(argLabelAsStr).joined(separator: commaSep))]"
     return
       """
-      (caseName: \(self.caseName), argLabels: \(raw: argLabelsAsStr), isUnavailable: \(raw: self.isUnavailable))
+      (caseName: "\(self.caseName)", argLabels: \(raw: argLabelsAsStr), isUnavailable: \(raw: self.isUnavailable))
       """
   }
 }
