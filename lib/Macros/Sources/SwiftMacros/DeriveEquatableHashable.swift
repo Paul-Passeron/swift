@@ -5,10 +5,11 @@ import SwiftSyntaxMacros
 
 public struct DeriveEquatableMacro {
 
-  static func expandStructDecl(members: [IdentifierPatternSyntax]) -> DeclSyntax {
+  static func expandStructDecl(members: [IdentifierPatternSyntax], desc: DerivedNominalKind) -> DeclSyntax
+  {
     """
     @_implements(Equatable, ==(_:_:))
-    @EquatableStructMacro
+    @deriveEquatableBody(\(desc.asExprSyntax()))
     static func __derived_equals(_ a: Self, _ b: Self) -> Bool
     """
   }
@@ -24,7 +25,7 @@ public struct DeriveEquatableMacro {
   static func expandDecl(derived: DerivedNominalKind) -> DeclSyntax {
     switch derived {
     case .aStruct(let members, isUnsafe: _):
-      return expandStructDecl(members: members)
+      return expandStructDecl(members: members, desc: derived)
     case .anEnum(let cases, isObjC: _, isUnsafe: _):
       return expandEnumDecl(cases: cases)
     }
@@ -83,11 +84,18 @@ public struct DeriveHashableHashMacro {
     case .aStruct(let members, let isUnsafe):
       return Self.expandStructDecl(members: members, isUnsafe: isUnsafe)
     case .anEnum(let cases, let isObjC, let isUnsafe):
-      return Self.expandEnumDecl(isObjC: isObjC, cases: cases, isUnsafe: isUnsafe)
+      return Self.expandEnumDecl(
+        isObjC: isObjC,
+        cases: cases,
+        isUnsafe: isUnsafe
+      )
     }
   }
 
-  static func expandStructDecl(members: [IdentifierPatternSyntax], isUnsafe: Bool) -> DeclSyntax {
+  static func expandStructDecl(
+    members: [IdentifierPatternSyntax],
+    isUnsafe: Bool
+  ) -> DeclSyntax {
     """
     func hash(into hasher: inout Hasher) {
     \(raw: members.map { member in
@@ -101,7 +109,11 @@ public struct DeriveHashableHashMacro {
     """
   }
 
-  static func expandEnumDecl(isObjC: Bool, cases: [EnumCaseInfo], isUnsafe: Bool) -> DeclSyntax {
+  static func expandEnumDecl(
+    isObjC: Bool,
+    cases: [EnumCaseInfo],
+    isUnsafe: Bool
+  ) -> DeclSyntax {
     if isObjC {
       return
         """
@@ -188,5 +200,48 @@ extension DeriveHashableHashMacro: DeclarationMacro {
     }
     let res = Self.expandDecl(derived: arg)
     return [res]
+  }
+}
+
+public struct DeriveEquatableBodyMacro: BodyMacro {
+  public static func expansion(
+    of node: AttributeSyntax,
+    providingBodyFor declaration: some DeclSyntaxProtocol
+      & WithOptionalCodeBlockSyntax,
+    in context: some MacroExpansionContext
+  ) throws -> [CodeBlockItemSyntax] {
+    guard let args = node.arguments else {
+      return []
+    }
+    let arg: ExprSyntax =
+      """
+      \(args)
+      """
+    guard let arg = decodeExpansionArg(arg: arg) else { return [] }
+    return deriveBody(arg)
+  }
+}
+
+extension DeriveEquatableBodyMacro {
+  static func deriveBody(_ arg: DerivedNominalKind) -> [CodeBlockItemSyntax] {
+    switch arg {
+    case .aStruct(let members, isUnsafe: _):
+      return deriveStructBody(members.map { $0.description })
+    case .anEnum(let cases, let isObjC, isUnsafe: _):
+      fatalError("TODO: enums")
+
+    }
+  }
+
+  static func deriveStructBody(_ members: [String]) -> [CodeBlockItemSyntax] {
+    members.map {
+      """
+      guard a.\(raw: $0) == b.\(raw: $0) else { return false }
+      """
+    } + [
+      """
+      return true
+      """
+    ]
   }
 }

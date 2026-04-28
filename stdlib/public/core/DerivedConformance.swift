@@ -21,6 +21,10 @@ public macro EquatableDeclMacro() = Builtin.DerivedConformanceMacro
 public macro deriveEquatable(_ kind: DerivedNominalKind) =
   #externalMacro(module: "SwiftMacros", type: "DeriveEquatableMacro")
 
+@attached(body)
+public macro deriveEquatableBody(_ kind: DerivedNominalKind) =
+  #externalMacro(module: "SwiftMacros", type: "DeriveEquatableBodyMacro")
+
 @freestanding(declaration, names: named(hashValue))
 public macro deriveHashableHashValue(_ kind: DerivedNominalKind) =
   #externalMacro(module: "SwiftMacros", type: "DeriveHashableHashValueMacro")
