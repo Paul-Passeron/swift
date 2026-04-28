@@ -5,7 +5,10 @@ import SwiftSyntaxMacros
 
 public struct DeriveEquatableMacro {
 
-  static func expandStructDecl(members: [IdentifierPatternSyntax], desc: DerivedNominalKind)
+  static func expandStructDecl(
+    members: [IdentifierPatternSyntax],
+    desc: DerivedNominalKind
+  )
     -> DeclSyntax
   {
     """
@@ -79,59 +82,108 @@ extension DeriveHashableHashValueMacro: DeclarationMacro {
   }
 }
 
+func expandHashableHashStructBody(
+  members: [IdentifierPatternSyntax],
+  isUnsafe: Bool
+) -> [CodeBlockItemSyntax] {
+  let unsafePrologue =
+    if isUnsafe {
+      "unsafe "
+    } else {
+      ""
+    }
+  return members.map { member in
+    """
+    \(raw: unsafePrologue)hasher.combine(self.\(raw: member.description))
+    """
+  }
+}
+
+func expandHashableHashEnumBody(
+  isObjC: Bool,
+  cases: [EnumCaseInfo],
+  isUnsafe: Bool
+) -> [CodeBlockItemSyntax] {
+  if isObjC {
+    return [
+      """
+      hasher.combine(self.rawValue)
+      """
+    ]
+  }
+
+  return
+    [
+      """
+      switch (self) {
+      \(raw: cases.enumerated().map {
+        "\($0.1.getCaseForHashableValue(idx: $0.0, isUnsafe: isUnsafe))"
+      }.joined(separator: "\n"))
+      }
+      """
+    ]
+
+}
+//
+//func expandHashableHashStructDecl(
+//  members: [IdentifierPatternSyntax],
+//  isUnsafe: Bool
+//) -> DeclSyntax {
+//  """
+//  func hash(into hasher: inout Hasher) {
+//  \(raw: members.map { member in
+//    if isUnsafe {
+//      return "    unsafe hasher.combine(self.\(member.description))"
+//    } else {
+//      return "    hasher.combine(self.\(member.description))"
+//    }
+//  }.joined(separator: "\n"))
+//  }
+//  """
+//}
+//
+//func expandHashableHashEnumDecl(
+//  isObjC: Bool,
+//  cases: [EnumCaseInfo],
+//  isUnsafe: Bool
+//) -> DeclSyntax {
+//  if isObjC {
+//    return
+//      """
+//      func hash(into hasher: inout Hasher) {
+//        hasher.combine(self.rawValue)
+//      }
+//      """
+//  }
+//  return
+//    """
+//    func hash(into hasher: inout Hasher) {
+//      switch (self) {
+//      \(raw: cases.enumerated().map { (i, theCase) in
+//        "\(theCase.getCaseForHashableValue(idx: i, isUnsafe: isUnsafe))"
+//      }.joined(separator: "\n  "))
+//      }
+//    }
+//    """
+//}
+
 public struct DeriveHashableHashMacro {
   static func expandDecl(derived: DerivedNominalKind) -> DeclSyntax {
-    switch derived {
-    case .aStruct(let members, let isUnsafe):
-      return Self.expandStructDecl(members: members, isUnsafe: isUnsafe)
-    case .anEnum(let cases, let isObjC, let isUnsafe):
-      return Self.expandEnumDecl(
-        isObjC: isObjC,
-        cases: cases,
-        isUnsafe: isUnsafe
-      )
-    }
-  }
+    //    switch derived {
+    //    case .aStruct(let members, let isUnsafe):
+    //      return expandHashableHashStructDecl(members: members, isUnsafe: isUnsafe)
+    //    case .anEnum(let cases, let isObjC, let isUnsafe):
+    //      return expandHashableHashEnumDecl(
+    //        isObjC: isObjC,
+    //        cases: cases,
+    //        isUnsafe: isUnsafe
+    //      )
+    //    }
 
-  static func expandStructDecl(
-    members: [IdentifierPatternSyntax],
-    isUnsafe: Bool
-  ) -> DeclSyntax {
-    """
-    func hash(into hasher: inout Hasher) {
-    \(raw: members.map { member in
-      if isUnsafe {
-        return "    unsafe hasher.combine(self.\(member.description))"
-      } else {
-        return "    hasher.combine(self.\(member.description))"
-      }
-    }.joined(separator: "\n"))
-    }
-    """
-  }
-
-  static func expandEnumDecl(
-    isObjC: Bool,
-    cases: [EnumCaseInfo],
-    isUnsafe: Bool
-  ) -> DeclSyntax {
-    if isObjC {
-      return
-        """
-        func hash(into hasher: inout Hasher) {
-          hasher.combine(self.rawValue)
-        }
-        """
-    }
     return
       """
-      func hash(into hasher: inout Hasher) {
-        switch (self) {
-        \(raw: cases.enumerated().map { (i, theCase) in
-          "\(theCase.getCaseForHashableValue(idx: i, isUnsafe: isUnsafe))"
-        }.joined(separator: "\n  "))
-        }
-      }
+      @deriveHashableHashBody(\(derived.asExprSyntax()))
+      func hash(into hasher: inout Hasher)
       """
   }
 }
@@ -219,7 +271,9 @@ public struct DeriveEquatableBodyMacro: BodyMacro {
       \(args)
       """
     guard let arg = decodeExpansionArg(arg: arg) else {
-      fatalError("Internal error: Could not decode expansion arg:\n\(arg.description)\n\n\(arg)")
+      fatalError(
+        "Internal error: Could not decode expansion arg:\n\(arg.description)\n\n\(arg)"
+      )
     }
     return deriveBody(arg)
   }
@@ -249,7 +303,11 @@ extension DeriveEquatableBodyMacro {
     ]
   }
 
-  static func getDiscriminator(varName: String, scrutinee: String, caseNames: [String])
+  static func getDiscriminator(
+    varName: String,
+    scrutinee: String,
+    caseNames: [String]
+  )
     -> CodeBlockItemSyntax
   {
     return
@@ -260,15 +318,23 @@ extension DeriveEquatableBodyMacro {
       """
   }
 
-  static func deriveEnumBody(cases: [EnumCaseInfo], isObjC: Bool) -> [CodeBlockItemSyntax] {
+  static func deriveEnumBody(cases: [EnumCaseInfo], isObjC: Bool)
+    -> [CodeBlockItemSyntax]
+  {
     let hasNoAssociatedValues = cases.allSatisfy { $0.argLabels.isEmpty }
     if hasNoAssociatedValues {
       let caseNames = cases.map { $0.caseName.description }
       return [
         getDiscriminator(
-          varName: "__a_discr", scrutinee: "a", caseNames: caseNames),
+          varName: "__a_discr",
+          scrutinee: "a",
+          caseNames: caseNames
+        ),
         getDiscriminator(
-          varName: "__b_discr", scrutinee: "b", caseNames: caseNames),
+          varName: "__b_discr",
+          scrutinee: "b",
+          caseNames: caseNames
+        ),
         """
         return __a_discr == __b_discr
         """,
@@ -310,7 +376,8 @@ extension EnumCaseInfo {
       return ".\(caseName.description)"
     } else {
       let elems = argLabels.enumerated().map {
-        idx, lbl in
+        idx,
+        lbl in
         if let lbl = lbl {
           return "\(lbl): let \(varPrefix)\(idx)"
         } else {
@@ -318,6 +385,38 @@ extension EnumCaseInfo {
         }
       }.joined(separator: ", ")
       return ".\(caseName.description)(\(elems))"
+    }
+  }
+}
+
+public struct DeriveHashableHashBodyMacro: BodyMacro {
+  public static func expansion(
+    of node: AttributeSyntax,
+    providingBodyFor declaration: some DeclSyntaxProtocol
+      & WithOptionalCodeBlockSyntax,
+    in context: some MacroExpansionContext
+  ) throws -> [CodeBlockItemSyntax] {
+    guard let args = node.arguments else {
+      fatalError("Internal error: Should have been arguments there !")
+    }
+    let arg: ExprSyntax =
+      """
+      \(args)
+      """
+    guard let arg = decodeExpansionArg(arg: arg) else {
+      fatalError(
+        "Internal error: Could not decode expansion arg:\n\(arg.description)\n\n\(arg)"
+      )
+    }
+    switch arg {
+    case .aStruct(let members, let isUnsafe):
+      return expandHashableHashStructBody(members: members, isUnsafe: isUnsafe)
+    case .anEnum(let cases, let isObjC, let isUnsafe):
+      return expandHashableHashEnumBody(
+        isObjC: isObjC,
+        cases: cases,
+        isUnsafe: isUnsafe
+      )
     }
   }
 }

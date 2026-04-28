@@ -221,20 +221,13 @@ extension DeriveComparableConfig {
         """
     }
 
-    switch self.nominalKind {
+    return switch self.nominalKind {
     case .anEnum(let cases, let isObjC, let isUnsafe):
-      let body = generateLessThanBody(
-        cases: cases,
-        isObjC: isObjC,
-        isUnsafe: isUnsafe
-      )
-      return
-        """
-        @deriveComparisonBody("<", \(self.nominalKind.asExprSyntax()))
-        \(prototype)
-        """
-    default:
-      return nil
+      """
+      @deriveComparisonBody("<", \(self.nominalKind.asExprSyntax()))
+      \(prototype)
+      """
+    default: nil
     }
   }
 }
