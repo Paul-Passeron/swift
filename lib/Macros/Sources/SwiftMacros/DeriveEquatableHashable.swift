@@ -234,9 +234,6 @@ extension DeriveEquatableBodyMacro {
       case .anEnum(let cases, let isObjC, isUnsafe: _):
         deriveEnumBody(cases: cases, isObjC: isObjC)
       }
-    print("=Eq Body================================")
-    print(body.description)
-    print("========================================")
     return body
   }
 

@@ -38,6 +38,10 @@ public macro deriveHashableHash(_ kind: DerivedNominalKind) =
 public macro deriveComparison(_ comparison: String, _ kind: DerivedNominalKind) =
   #externalMacro(module: "SwiftMacros", type: "DeriveComparisonMacro")
 
+@attached(body)
+public macro deriveComparisonBody(_ comparison: String, _ kind: DerivedNominalKind) =
+  #externalMacro(module: "SwiftMacros", type: "DeriveComparisonBodyMacro")
+
 @freestanding(declaration, names: named(allCases))
 public macro deriveCaseIterable(_ kind: DerivedNominalKind) =
   #externalMacro(module: "SwiftMacros", type: "DeriveCaseIterableMacro")

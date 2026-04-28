@@ -51,7 +51,11 @@ extension ComparisonKind {
     }
   }
 
-  func functionPrototype(lhsName: String = "a", rhsName: String = "b", isResilient: Bool = false)
+  func functionPrototype(
+    lhsName: String = "a",
+    rhsName: String = "b",
+    isResilient: Bool = false
+  )
     -> String?
   {
     guard let resilientName = resilientName() else { return nil }
@@ -114,14 +118,17 @@ extension DeriveComparableConfig {
       """
   }
 
-  static func generateRegularSwitchCaseOneSide(name: String, theCase: EnumCaseInfo) -> String {
+  static func generateRegularSwitchCaseOneSide(
+    name: String,
+    theCase: EnumCaseInfo
+  ) -> String {
     if theCase.argLabels.isEmpty {
       return ".\(theCase.caseName)"
     }
     let pattern = theCase.argLabels.enumerated().map { (idx, lbl) in
       let letDecl = "let \(name)\(idx)"
       return if let lbl = lbl {
-        "\(letDecl): \(lbl)"
+        "\(lbl): \(letDecl)"
       } else {
         letDecl
       }
@@ -160,7 +167,9 @@ extension DeriveComparableConfig {
     cases.map { Self.generateRegularSwitchCase($0) }.joined(separator: "\n")
   }
 
-  func generateLessThanBody(cases: [EnumCaseInfo], isObjC: Bool, isUnsafe: Bool) -> String {
+  func generateLessThanBody(cases: [EnumCaseInfo], isObjC: Bool, isUnsafe: Bool)
+    -> String
+  {
     if cases.isEmpty { return "" }
     if hasNoAssociatedValues(cases: cases) {
       return generateCompareIndices(cases: cases)
@@ -181,8 +190,26 @@ extension DeriveComparableConfig {
       """
   }
 
+  func expandBody() -> String? {
+    switch self.nominalKind {
+    case .anEnum(let cases, let isObjC, let isUnsafe):
+      return generateLessThanBody(
+        cases: cases,
+        isObjC: isObjC,
+        isUnsafe: isUnsafe
+      )
+    default:
+      return nil
+    }
+  }
+
   func expansionText() -> String? {
-    guard let prototype = self.kind.functionPrototype(lhsName: lhsName, rhsName: rhsName) else {
+    guard
+      let prototype = self.kind.functionPrototype(
+        lhsName: lhsName,
+        rhsName: rhsName
+      )
+    else {
       return nil
     }
 
@@ -197,12 +224,14 @@ extension DeriveComparableConfig {
     switch self.nominalKind {
     case .anEnum(let cases, let isObjC, let isUnsafe):
       let body = generateLessThanBody(
-        cases: cases, isObjC: isObjC, isUnsafe: isUnsafe)
+        cases: cases,
+        isObjC: isObjC,
+        isUnsafe: isUnsafe
+      )
       return
         """
-        \(prototype) {
-          \(body)
-        }
+        @deriveComparisonBody("<", \(self.nominalKind.asExprSyntax()))
+        \(prototype)
         """
     default:
       return nil
@@ -221,22 +250,80 @@ public struct DeriveComparisonMacro: DeclarationMacro {
 }
 
 extension DeriveComparisonMacro {
-  static func driver(of node: some FreestandingMacroExpansionSyntax) -> DeclSyntax? {
+  static func driver(of node: some FreestandingMacroExpansionSyntax)
+    -> DeclSyntax?
+  {
     let args = node.arguments.map { $0 }
     guard
       let comparison: ComparisonKind =
-        switch args[0].expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue {
+        switch args[0].expression.as(StringLiteralExprSyntax.self)?
+          .representedLiteralValue
+        {
         case "<": .lessThan
         case "==": .equal
         default: nil
         }
     else { return nil }
-    guard let arg = decodeExpansionArg(arg: args[1].expression) else { return nil }
-    let config = DeriveComparableConfig(nominalKind: arg, comparison: comparison)
+    guard let arg = decodeExpansionArg(arg: args[1].expression) else {
+      return nil
+    }
+    let config = DeriveComparableConfig(
+      nominalKind: arg,
+      comparison: comparison
+    )
     guard let expanded = config.expansionText() else { return nil }
     return
       """
       \(raw: expanded)
       """
+  }
+}
+
+public struct DeriveComparisonBodyMacro: BodyMacro {
+  public static func expansion(
+    of node: AttributeSyntax,
+    providingBodyFor declaration: some DeclSyntaxProtocol
+      & WithOptionalCodeBlockSyntax,
+    in context: some MacroExpansionContext
+  ) throws -> [CodeBlockItemSyntax] {
+    guard let body = driver(of: node) else { fatalError("Bad arguments") }
+    return body
+  }
+}
+
+extension DeriveComparisonBodyMacro {
+  static func driver(of node: AttributeSyntax) -> [CodeBlockItemSyntax]? {
+    guard let args = node.arguments else { return nil }
+    guard
+      let args =
+        switch args {
+        case .argumentList(let lst):
+          lst.map({ $0 })
+        default: nil
+        }
+    else { return nil }
+    guard
+      let comparison: ComparisonKind =
+        switch args[0].expression.as(StringLiteralExprSyntax.self)?
+          .representedLiteralValue
+        {
+        case "<": .lessThan
+        case "==": .equal
+        default: nil
+        }
+    else { return nil }
+    guard let arg = decodeExpansionArg(arg: args[1].expression) else {
+      return nil
+    }
+    let config = DeriveComparableConfig(
+      nominalKind: arg,
+      comparison: comparison
+    )
+    guard let expanded = config.expandBody() else { return nil }
+    let codeBlock: CodeBlockItemListSyntax =
+      """
+      \(raw: expanded)
+      """
+    return codeBlock.map { $0 }
   }
 }
