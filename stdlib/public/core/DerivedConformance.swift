@@ -29,3 +29,7 @@ public macro deriveComparisonBody(_ comparison: String, _ kind: DerivedNominalKi
 @freestanding(declaration, names: named(allCases))
 public macro deriveCaseIterable(_ kind: DerivedNominalKind) =
   #externalMacro(module: "SwiftMacros", type: "DeriveCaseIterableMacro")
+
+@freestanding(declaration, names: named(_nsErrorDomain))
+public macro deriveErrorNSErrorDomain(_ asObjCEnum: String? = nil) =
+  #externalMacro(module: "SwiftMacros", type: "DeriveErrorNSErrorDomainMacro")

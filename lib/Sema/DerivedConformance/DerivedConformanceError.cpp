@@ -17,6 +17,7 @@
 
 #include "CodeSynthesis.h"
 #include "DerivedConformance.h"
+#include "DerivedConformanceMacros.h"
 #include "TypeChecker.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/Expr.h"
@@ -24,6 +25,7 @@
 #include "swift/AST/Stmt.h"
 #include "swift/AST/SwiftNameTranslation.h"
 #include "swift/AST/Types.h"
+#include "llvm/Support/ErrorHandling.h"
 
 using namespace swift;
 using namespace swift::objc_translation;
@@ -111,23 +113,104 @@ deriveBridgedNSError_enum_nsErrorDomain(
   return propDecl;
 }
 
+static ValueDecl *deriveBridgedNSErrorViaMacros(DerivedConformance &der,
+                                                ValueDecl *requirement) {
+  auto *parentDc = der.getConformanceContext();
+  auto &C = parentDc->getASTContext();
+  auto atLoc = getValidSourceLocForImplicit(der, requirement);
+  std::string code = "#deriveErrorNSErrorDomain";
+  auto scope =
+      der.Nominal->getFormalAccessScope(der.Nominal->getModuleScopeContext());
+  if (scope.isPublic() || scope.isInternal()) {
+    // TODO: is using Nominal instead of domainDecl right ?
+    auto M = der.Nominal->getParentModule();
+    auto &C = M->getASTContext();
+    auto TC = der.Nominal->getInnermostTypeContext();
+    auto ED = TC->getSelfEnumDecl();
+
+    StringRef value(C.AllocateCopy(getErrorDomainStringForObjC(ED)));
+    code += "(\"";
+    code += value;
+    code += "\")";
+  }
+
+  auto bufferID = registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, der);
+  auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
+                                         bufferID, parentDc);
+
+  auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
+  eInfo->SigilLoc = atLoc;
+  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
+
+  der.addMemberToConformanceContext(free, nullptr);
+  ValueDecl *val = nullptr;
+  free->forEachExpandedNode([&](ASTNode node) {
+    auto *decl = node.dyn_cast<Decl *>();
+    auto thisBuffer =
+        C.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
+    auto *SF = C.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
+    auto scope = SF->getScope();
+    scope.buildFullyExpandedTree();
+
+    decl->setDeclContext(der.getConformanceContext());
+    decl->setImplicit(true);
+
+    if (isa<PatternBindingDecl>(decl)) {
+      return;
+    }
+    auto vdecl = dyn_cast<ValueDecl>(decl);
+    assert(vdecl);
+    vdecl->setSynthesized();
+    if (!vdecl->hasAccess()) {
+      vdecl->copyFormalAccessFrom(der.Nominal,
+                                  /*sourceIsParentContext=*/true);
+    } else {
+      vdecl->overwriteAccess(der.Nominal->getFormalAccess());
+    }
+    val = vdecl;
+    if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
+      vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
+      if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
+        getter->setImplicit();
+        getter->setSynthesized();
+        if (!getter->hasAccess()) {
+          getter->copyFormalAccessFrom(der.Nominal,
+                                       /*sourceIsParentContext=*/true);
+        } else {
+          getter->overwriteAccess(der.Nominal->getFormalAccess());
+        }
+        getter->setIsTransparent(false);
+      }
+      val = vdecl;
+    }
+  });
+  assert(val && "Macro expansion did not produce a witness");
+  return val;
+}
+
 ValueDecl *DerivedConformance::deriveBridgedNSError(ValueDecl *requirement) {
   if (!isa<EnumDecl>(Nominal))
     return nullptr;
 
-  if (requirement->getBaseName() == Context.Id_nsErrorDomain) {
-    auto synthesizer = deriveBodyBridgedNSError_enum_nsErrorDomain;
-
-    auto scope = Nominal->getFormalAccessScope(Nominal->getModuleScopeContext());
-    if (scope.isPublic() || scope.isInternal())
-      // PrintAsClang may print this domain, so we should make sure we use the
-      // same string it will.
-      synthesizer = deriveBodyBridgedNSError_printAsObjCEnum_nsErrorDomain;
-
-    return deriveBridgedNSError_enum_nsErrorDomain(*this, synthesizer);
+  if (requirement->getBaseName() != Context.Id_nsErrorDomain) {
+    Context.Diags.diagnose(requirement->getLoc(),
+                           diag::broken_errortype_requirement);
+    return nullptr;
   }
 
-  Context.Diags.diagnose(requirement->getLoc(),
-                         diag::broken_errortype_requirement);
-  return nullptr;
+  auto *parentDc = getConformanceContext();
+  auto &C = parentDc->getASTContext();
+
+  if (C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+    return deriveBridgedNSErrorViaMacros(*this, requirement);
+  }
+  auto synthesizer = deriveBodyBridgedNSError_enum_nsErrorDomain;
+
+  auto scope = Nominal->getFormalAccessScope(Nominal->getModuleScopeContext());
+  if (scope.isPublic() || scope.isInternal())
+    // PrintAsClang may print this domain, so we should make sure we use the
+    // same string it will.
+    synthesizer = deriveBodyBridgedNSError_printAsObjCEnum_nsErrorDomain;
+
+  return deriveBridgedNSError_enum_nsErrorDomain(*this, synthesizer);
 }

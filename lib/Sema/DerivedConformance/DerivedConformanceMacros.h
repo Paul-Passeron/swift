@@ -38,15 +38,16 @@ const char *cloneString(llvm::BumpPtrAllocator &allocator, StringRef str);
 std::string getUniqueASTGenBufferName();
 
 unsigned registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
-                                               DeclContext *parentDc,
-                                               SourceLoc atLoc,
-                                               DerivedConformance &der);
-
+                                        DeclContext *parentDc, SourceLoc atLoc,
+                                        DerivedConformance &der);
 
 MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
                                               ModuleDecl *module,
                                               unsigned bufferID,
                                               DeclContext *parentDc);
+
+SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived,
+                                       ValueDecl *requirement);
 
 // ==== Equatable =============================================================
 

@@ -457,28 +457,6 @@ static ValueDecl *deriveEquatable_eq(
   return eqDecl;
 }
 
-static SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived,
-                                              ValueDecl *requirement) {
-  auto atLoc = derived.Conformance->getLoc();
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = requirement->getStartLoc();
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = requirement->getEndLoc();
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = derived.Nominal->getBraces().Start;
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = derived.Nominal->getBraces().End;
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = derived.Nominal->getBraces().End.getAdvancedLocOrInvalid(-1);
-  assert(atLoc.isValid() && "Conformance loc is invalid");
-  return atLoc;
-}
-
 static ValueDecl *deriveEquatableViaMacro(DerivedConformance &der,
                                           ValueDecl *requirement) {
   auto *parentDc = der.getConformanceContext();
@@ -1047,8 +1025,6 @@ static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
   eInfo->SigilLoc = atLoc;
   eInfo->MacroNameLoc = DeclNameLoc(atLoc);
 
-  static std::unordered_set<void *> allDecls;
-
   der.addMemberToConformanceContext(free, nullptr);
   ValueDecl *val = nullptr;
   free->forEachExpandedNode([&](ASTNode node) {
@@ -1058,8 +1034,6 @@ static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
     auto *SF = ctx.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
     auto scope = SF->getScope();
     scope.buildFullyExpandedTree();
-
-    allDecls.insert((void *)decl);
 
     decl->setDeclContext(der.getConformanceContext());
     decl->setImplicit(true);

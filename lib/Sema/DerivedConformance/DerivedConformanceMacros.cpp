@@ -114,3 +114,26 @@ MacroExpansionDecl *swift::parseSynthesizedMacroDecl(ASTContext &ctx,
   assert(free && "Expected a MacroExpansionDecl");
   return free;
 }
+
+
+SourceLoc swift::getValidSourceLocForImplicit(DerivedConformance &derived,
+                                              ValueDecl *requirement) {
+  auto atLoc = derived.Conformance->getLoc();
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = requirement->getStartLoc();
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = requirement->getEndLoc();
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = derived.Nominal->getBraces().Start;
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = derived.Nominal->getBraces().End;
+  if (atLoc.isValid())
+    return atLoc;
+  atLoc = derived.Nominal->getBraces().End.getAdvancedLocOrInvalid(-1);
+  assert(atLoc.isValid() && "Conformance loc is invalid");
+  return atLoc;
+}
