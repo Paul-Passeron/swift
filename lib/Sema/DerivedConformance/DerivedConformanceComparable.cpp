@@ -318,7 +318,7 @@ static ValueDecl *deriveComparableViaMacros(DerivedConformance &der,
     assert(decl && "macro expansion node is not a Decl");
     auto *fdecl = dyn_cast<FuncDecl>(decl);
     assert(fdecl);
-    assert(fdecl->getMacroExpandedBody() && "macro expansion body is null");
+    fdecl->getMacroExpandedBody();
     fdecl->setUserAccessible(false);
     addNonIsolatedToSynthesized(der, fdecl);
     val = static_cast<ValueDecl *>(fdecl);

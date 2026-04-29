@@ -371,6 +371,7 @@ func getDiscriminator(
 func deriveEquatableEnumBody(cases: [EnumCaseInfo], isObjC: Bool)
   -> [CodeBlockItemSyntax]
 {
+  if cases.isEmpty { return [] }
   let hasNoAssociatedValues = cases.allSatisfy { $0.argLabels.isEmpty }
   if hasNoAssociatedValues {
     let caseNames = cases.map { $0.caseName.description }
