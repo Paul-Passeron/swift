@@ -101,21 +101,27 @@ extension DeriveComparableConfig {
       """
   }
 
-  func generateCompareIndices(cases: [EnumCaseInfo]) -> String {
-    if cases.isEmpty { return "" }
+  func generateCompareIndices(cases: [EnumCaseInfo]) -> [CodeBlockItemSyntax] {
+    if cases.isEmpty { return [] }
     let lhsVar = "\(lhsName)_discr"
     let rhsVar = "\(rhsName)_discr"
     let theSwitch = generateCompareIndicesSwitchBody(cases: cases)
     return
-      """
-      let \(lhsVar) = switch \(lhsName) {
-      \(theSwitch)
-      }
-      let \(rhsVar) = switch \(rhsName) {
-      \(theSwitch)
-      }
-      return \(lhsVar) < \(rhsVar)
-      """
+      [
+        """
+        let \(raw: lhsVar) = switch \(raw: lhsName) {
+        \(raw: theSwitch)
+        }
+        """,
+        """
+        let \(raw: rhsVar) = switch \(raw: rhsName) {
+        \(raw: theSwitch)
+        }
+        """,
+        """
+        return \(raw: lhsVar) < \(raw: rhsVar)
+        """,
+      ]
   }
 
   static func generateRegularSwitchCaseOneSide(
@@ -168,9 +174,9 @@ extension DeriveComparableConfig {
   }
 
   func generateLessThanBody(cases: [EnumCaseInfo], isObjC: Bool, isUnsafe: Bool)
-    -> String
+    -> [CodeBlockItemSyntax]
   {
-    if cases.isEmpty { return "" }
+    if cases.isEmpty { return [] }
     if hasNoAssociatedValues(cases: cases) {
       return generateCompareIndices(cases: cases)
     }
@@ -178,29 +184,37 @@ extension DeriveComparableConfig {
       if cases.count > 1 {
         """
         default:
-          \(generateCompareIndices(cases: cases))
+          \(generateCompareIndices(cases: cases).map { $0.description}.joined(separator: "\n"))
         """
       } else { "" }
-    return
+    return [
       """
-      switch (\(lhsName), \(rhsName)) {
-      \(Self.generateRegularSwitchCases(cases: cases))
-      \(defaultCase)
+      switch (\(raw: lhsName), \(raw: rhsName)) {
+      \(raw: Self.generateRegularSwitchCases(cases: cases))
+      \(raw: defaultCase)
       }
       """
+    ]
   }
 
-  func expandBody() -> String? {
-    switch self.nominalKind {
-    case .anEnum(let cases, let isObjC, let isUnsafe):
-      return generateLessThanBody(
-        cases: cases,
-        isObjC: isObjC,
-        isUnsafe: isUnsafe
-      )
-    default:
-      return nil
+  func expandBody() -> [CodeBlockItemSyntax]? {
+    switch self.kind {
+    case .equal:
+      return deriveEquatableBody(self.nominalKind)
+    case .lessThan:
+      switch self.nominalKind {
+      case .anEnum(let cases, let isObjC, let isUnsafe):
+        return generateLessThanBody(
+          cases: cases,
+          isObjC: isObjC,
+          isUnsafe: isUnsafe
+        )
+      default:
+        return nil
+      }
+    default: return nil
     }
+
   }
 
   func expansionText() -> String? {
@@ -216,13 +230,13 @@ extension DeriveComparableConfig {
     if self.kind == .equal {
       return
         """
-        @deriveEquatableBody(\(self.nominalKind.asExprSyntax()))
+        @deriveComparisonBody("==", \(self.nominalKind.asExprSyntax()))
         \(prototype)
         """
     }
 
     return switch self.nominalKind {
-    case .anEnum(let cases, let isObjC, let isUnsafe):
+    case .anEnum:
       """
       @deriveComparisonBody("<", \(self.nominalKind.asExprSyntax()))
       \(prototype)
@@ -312,11 +326,114 @@ extension DeriveComparisonBodyMacro {
       nominalKind: arg,
       comparison: comparison
     )
-    guard let expanded = config.expandBody() else { return nil }
-    let codeBlock: CodeBlockItemListSyntax =
+    return config.expandBody()
+  }
+}
+
+func deriveEquatableBody(_ arg: DerivedNominalKind) -> [CodeBlockItemSyntax] {
+  let body =
+    switch arg {
+    case .aStruct(let members, isUnsafe: _):
+      deriveEquatableStructBody(members.map { $0.description })
+    case .anEnum(let cases, let isObjC, isUnsafe: _):
+      deriveEquatableEnumBody(cases: cases, isObjC: isObjC)
+    }
+  return body
+}
+
+func deriveEquatableStructBody(_ members: [String]) -> [CodeBlockItemSyntax] {
+  members.map {
+    """
+    guard a.\(raw: $0) == b.\(raw: $0) else { return false }
+    """
+  } + [
+    """
+    return true
+    """
+  ]
+}
+
+func getDiscriminator(
+  varName: String,
+  scrutinee: String,
+  caseNames: [String]
+)
+  -> CodeBlockItemSyntax
+{
+  return
+    """
+    let \(raw: varName) = switch \(raw: scrutinee) {
+    \(raw: caseNames.enumerated().map { idx, caseName in "case .\(caseName): \(idx)" }.joined(separator: "\n"))
+    }
+    """
+}
+
+func deriveEquatableEnumBody(cases: [EnumCaseInfo], isObjC: Bool)
+  -> [CodeBlockItemSyntax]
+{
+  let hasNoAssociatedValues = cases.allSatisfy { $0.argLabels.isEmpty }
+  if hasNoAssociatedValues {
+    let caseNames = cases.map { $0.caseName.description }
+    return [
+      getDiscriminator(
+        varName: "__a_discr",
+        scrutinee: "a",
+        caseNames: caseNames
+      ),
+      getDiscriminator(
+        varName: "__b_discr",
+        scrutinee: "b",
+        caseNames: caseNames
+      ),
       """
-      \(raw: expanded)
-      """
-    return codeBlock.map { $0 }
+      return __a_discr == __b_discr
+      """,
+    ]
+  } else {
+    let defaultCase =
+      if cases.count > 1 {
+        """
+        default: return false
+        """
+      } else {
+        ""
+      }
+    let switchStmt = """
+      switch (a, b) {
+      \(raw: cases.map {
+        theCase in
+        """
+        case (\(theCase.asPattern(varPrefix: "l")), \(theCase.asPattern(varPrefix: "r"))):
+        \(theCase.argLabels.enumerated().map { idx, c in
+        """
+        guard l\(idx) == r\(idx) else { return false }
+        """
+        }.joined(separator: "\n"))
+        return true
+        """
+        }.joined(separator: "\n"))
+      \(raw: defaultCase)
+      }
+      """ as CodeBlockItemSyntax
+    return [switchStmt]
+  }
+}
+
+extension EnumCaseInfo {
+  func asPattern(varPrefix: String) -> String {
+    if argLabels.isEmpty {
+      return ".\(caseName.description)"
+    } else {
+      let elems = argLabels.enumerated().map {
+        idx,
+        lbl in
+        if let lbl = lbl {
+          return "\(lbl): let \(varPrefix)\(idx)"
+        } else {
+          return "let \(varPrefix)\(idx)"
+        }
+      }.joined(separator: ", ")
+      return ".\(caseName.description)(\(elems))"
+    }
   }
 }
