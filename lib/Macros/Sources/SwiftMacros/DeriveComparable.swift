@@ -102,7 +102,9 @@ extension DeriveComparableConfig {
   }
 
   func generateCompareIndices(cases: [EnumCaseInfo]) -> [CodeBlockItemSyntax] {
-    if cases.isEmpty { return [] }
+    if cases.isEmpty {
+      return [.placeholderItem()]
+    }
     let lhsVar = "\(lhsName)_discr"
     let rhsVar = "\(rhsName)_discr"
     let theSwitch = generateCompareIndicesSwitchBody(cases: cases)
@@ -176,7 +178,9 @@ extension DeriveComparableConfig {
   func generateLessThanBody(cases: [EnumCaseInfo], isObjC: Bool, isUnsafe: Bool)
     -> [CodeBlockItemSyntax]
   {
-    if cases.isEmpty { return [] }
+    if cases.isEmpty {
+      return [.placeholderItem()]
+    }
     if hasNoAssociatedValues(cases: cases) {
       return generateCompareIndices(cases: cases)
     }
@@ -371,7 +375,13 @@ func getDiscriminator(
 func deriveEquatableEnumBody(cases: [EnumCaseInfo], isObjC: Bool)
   -> [CodeBlockItemSyntax]
 {
-  if cases.isEmpty { return [] }
+  if cases.isEmpty {
+    return [
+      """
+      // Unreachable code
+      """
+    ]
+  }
   let hasNoAssociatedValues = cases.allSatisfy { $0.argLabels.isEmpty }
   if hasNoAssociatedValues {
     let caseNames = cases.map { $0.caseName.description }

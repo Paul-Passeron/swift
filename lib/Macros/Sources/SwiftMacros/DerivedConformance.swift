@@ -204,3 +204,11 @@ func hasNoAssociatedValues(cases: [EnumCaseInfo]) -> Bool {
 func hasUnavailableValues(cases: [EnumCaseInfo]) -> Bool {
   return cases.contains { $0.isUnavailable }
 }
+
+extension CodeBlockItemSyntax {
+  public static func placeholderItem() -> Self {
+    """
+    // no-op
+    """
+  }
+}

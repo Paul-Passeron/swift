@@ -39,6 +39,9 @@ func expandHashableHashStructBody(
   members: [IdentifierPatternSyntax],
   isUnsafe: Bool
 ) -> [CodeBlockItemSyntax] {
+  if members.isEmpty {
+    return [.placeholderItem()]
+  }
   let unsafePrologue =
     if isUnsafe {
       "unsafe "
@@ -63,6 +66,9 @@ func expandHashableHashEnumBody(
       hasher.combine(self.rawValue)
       """
     ]
+  }
+  if cases.isEmpty {
+    return [.placeholderItem()]
   }
 
   return
@@ -165,10 +171,10 @@ public struct DeriveHashableHashBodyMacro: BodyMacro {
     in context: some MacroExpansionContext
   ) throws -> [CodeBlockItemSyntax] {
     let args =
-    switch node.arguments {
-    case .argumentList(let args):
-      args.map { $0.expression }
-    default: fatalError("Bad args")
+      switch node.arguments {
+      case .argumentList(let args):
+        args.map { $0.expression }
+      default: fatalError("Bad args")
       }
     guard args.count == 1, let arg = args.first else {
       fatalError("Bad args")
