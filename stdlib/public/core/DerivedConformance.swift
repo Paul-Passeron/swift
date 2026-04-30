@@ -33,3 +33,7 @@ public macro deriveCaseIterable(_ kind: DerivedNominalKind) =
 @freestanding(declaration, names: named(_nsErrorDomain))
 public macro deriveErrorNSErrorDomain(_ asObjCEnum: String? = nil) =
   #externalMacro(module: "SwiftMacros", type: "DeriveErrorNSErrorDomainMacro")
+
+@freestanding(declaration, names: named(+), named(-), named(zero))
+public macro deriveAdditiveArithmetic(_ req: String, _ properties: [String]) =
+  #externalMacro(module: "SwiftMacros", type: "DeriveAdditiveArithmeticMacro")

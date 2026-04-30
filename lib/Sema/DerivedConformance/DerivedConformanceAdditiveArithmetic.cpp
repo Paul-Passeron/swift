@@ -23,6 +23,7 @@
 
 #include "CodeSynthesis.h"
 #include "DerivedConformance.h"
+#include "DerivedConformance/DerivedConformanceMacros.h"
 #include "TypeChecker.h"
 #include "swift/AST/ConformanceLookup.h"
 #include "swift/AST/Decl.h"
@@ -34,6 +35,8 @@
 #include "swift/AST/Stmt.h"
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
 
 using namespace swift;
 
@@ -78,7 +81,7 @@ bool DerivedConformance::canDeriveAdditiveArithmetic(NominalTypeDecl *nominal,
     if (v->getInterfaceType()->hasError())
       return false;
     auto varType = DC->mapTypeIntoEnvironment(v->getValueInterfaceType());
-    return (bool) checkConformance(varType, proto);
+    return (bool)checkConformance(varType, proto);
   });
 }
 
@@ -206,7 +209,7 @@ static ValueDecl *deriveMathOperator(DerivedConformance &derived,
   // For the effective memberwise initializer before we force the body,
   // so that it becomes part of the emitted ABI members even if we don't
   // emit the body.
-  (void) nominal->getEffectiveMemberwiseInitializer();
+  (void)nominal->getEffectiveMemberwiseInitializer();
 
   return operatorDecl;
 }
@@ -312,9 +315,94 @@ static ValueDecl *deriveAdditiveArithmetic_zero(DerivedConformance &derived) {
   // For the effective memberwise initializer before we force the body,
   // so that it becomes part of the emitted ABI members even if we don't
   // emit the body.
-  (void) nominal->getEffectiveMemberwiseInitializer();
+  (void)nominal->getEffectiveMemberwiseInitializer();
 
   return propDecl;
+}
+
+static ValueDecl *deriveAdditiveArithmeticViaMacro(DerivedConformance &der,
+                                                   ValueDecl *requirement) {
+  auto nominalDecl = der.Nominal;
+  std::string code = "#deriveAdditiveArithmetic(\"";
+  code += requirement->getBaseName().getIdentifier().str();
+  code += "\", [";
+
+  bool first = true;
+  for (const auto &storedProperty : nominalDecl->getStoredProperties()) {
+    if (!first) code += ", ";
+    first = false;
+    code += "\"";
+    code += storedProperty->getNameStr();
+    code += "\"";
+  }
+  code += "])";
+
+  auto *parentDc = der.getConformanceContext();
+  auto &ctx = parentDc->getASTContext();
+  auto atLoc = getValidSourceLocForImplicit(der, requirement);
+  auto bufferID =
+      registerSynthesizedMacroBuffer(ctx, code, parentDc, atLoc, der);
+  auto *free = parseSynthesizedMacroDecl(ctx, requirement->getModuleContext(),
+                                         bufferID, parentDc);
+  auto *eInfo = free->getExpansionInfo();
+  eInfo->SigilLoc = atLoc;
+  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
+  der.addMemberToConformanceContext(free, nullptr);
+  ValueDecl *val = nullptr;
+  free->forEachExpandedNode([&](ASTNode node) {
+    auto *decl = node.dyn_cast<Decl *>();
+    auto thisBuffer =
+        ctx.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
+    auto *SF = ctx.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
+    auto scope = SF->getScope();
+    scope.buildFullyExpandedTree();
+
+    decl->setDeclContext(der.getConformanceContext());
+    decl->setImplicit(true);
+
+    if (isa<PatternBindingDecl>(decl)) {
+      return;
+    }
+    auto vdecl = dyn_cast<ValueDecl>(decl);
+    assert(vdecl);
+    // vdecl->setSynthesized();
+    if (!vdecl->hasAccess()) {
+      vdecl->copyFormalAccessFrom(der.Nominal,
+                                  /*sourceIsParentContext=*/true);
+    } else {
+      vdecl->overwriteAccess(der.Nominal->getFormalAccess());
+    }
+
+    val = vdecl;
+    if (auto fdecl = dyn_cast<AbstractFunctionDecl>(decl)) {
+      addNonIsolatedToSynthesized(der, fdecl);
+      fdecl->getMacroExpandedBody();
+    }
+    if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
+      vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
+      if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
+        getter->setImplicit();
+        getter->setSynthesized();
+        if (!getter->hasAccess()) {
+          getter->copyFormalAccessFrom(der.Nominal,
+                                       /*sourceIsParentContext=*/true);
+        } else {
+          getter->overwriteAccess(der.Nominal->getFormalAccess());
+        }
+      }
+      val = vdecl;
+    }
+  }
+  );
+
+  assert(val && "Macro expansion did not produce a witness");
+  llvm::errs() << "\n";
+  val->print(llvm::errs(), PrintOptions::printEverything());
+  llvm::errs() << "\n";
+
+  (void)nominalDecl->getEffectiveMemberwiseInitializer();
+
+  return val;
 }
 
 ValueDecl *
@@ -322,12 +410,19 @@ DerivedConformance::deriveAdditiveArithmetic(ValueDecl *requirement) {
   // Diagnose conformances in disallowed contexts.
   if (checkAndDiagnoseDisallowedContext(requirement))
     return nullptr;
+
+  auto &C = requirement->getASTContext();
+  if (C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+    return deriveAdditiveArithmeticViaMacro(*this, requirement);
+  }
+
   if (requirement->getBaseName() == Context.getIdentifier("+"))
     return deriveMathOperator(*this, Add);
   if (requirement->getBaseName() == Context.getIdentifier("-"))
     return deriveMathOperator(*this, Subtract);
   if (requirement->getBaseName() == Context.Id_zero)
     return deriveAdditiveArithmetic_zero(*this);
+
   Context.Diags.diagnose(requirement->getLoc(),
                          diag::broken_additive_arithmetic_requirement);
   return nullptr;

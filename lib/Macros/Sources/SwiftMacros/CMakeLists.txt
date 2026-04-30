@@ -18,6 +18,7 @@ add_swift_macro_library(SwiftMacros
   DeriveComparable.swift
   DeriveCaseIterable.swift
   DeriveError.swift
+  DeriveAdditiveArithmetic.swift
   DistributedResolvableMacro.swift
   SyntaxExtensions.swift
   TaskLocalMacro.swift
