@@ -332,6 +332,13 @@ public:
   void visitOwnedAttr(OwnedAttr *attr) {
     assert(!D->hasClangNode() && "@_owned on imported declaration?");
 
+    if (!Ctx.LangOpts.hasFeature(Feature::UnderscoreOwned) &&
+        !D->getDeclContext()->isInSwiftinterface()) {
+      Ctx.Diags.diagnose(attr->getLocation(),
+                         diag::attribute_requires_experimental_feature, attr,
+                         "UnderscoreOwned");
+    }
+
     auto *ASD = cast<AbstractStorageDecl>(D);
 
     // Ensure it defines a 'get' for read accesses.
@@ -5121,8 +5128,12 @@ AttributeChecker::visitImplementationOnlyAttr(ImplementationOnlyAttr *attr) {
 
   auto *VD = cast<ValueDecl>(D);
 
-  // @_implementationOnly on types only applies to non-public types.
-  if (isa<NominalTypeDecl>(D)) {
+  // @_implementationOnly on types only applies to non-public types and
+  // classes stored properties.
+  auto *varDecl = dyn_cast<VarDecl>(VD);
+  if (isa<NominalTypeDecl>(D) ||
+      (varDecl && varDecl->hasStorage() &&
+       isa<ClassDecl>(varDecl->getDeclContext()))) {
     auto access =
         VD->getFormalAccessScope(/*useDC=*/nullptr,
                                  /*treatUsableFromInlineAsPublic=*/true);

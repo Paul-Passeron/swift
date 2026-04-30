@@ -888,11 +888,12 @@ void Serializer::writeBlockInfoBlock() {
   BLOCK_RECORD(options_block, ALLOW_NON_RESILIENT_ACCESS);
   BLOCK_RECORD(options_block, SERIALIZE_PACKAGE_ENABLED);
   BLOCK_RECORD(options_block, STRICT_MEMORY_SAFETY);
-  BLOCK_RECORD(options_block, DEFERRED_CODE_GEN);
+  BLOCK_RECORD(options_block, CODE_GENERATION_MODEL);
   BLOCK_RECORD(options_block, AGGRESSIVE_CMO);
   BLOCK_RECORD(options_block, CXX_STDLIB_KIND);
   BLOCK_RECORD(options_block, PUBLIC_MODULE_NAME);
   BLOCK_RECORD(options_block, SWIFT_INTERFACE_COMPILER_VERSION);
+  BLOCK_RECORD(options_block, LIBRARY_LEVEL);
 
   BLOCK(INPUT_BLOCK);
   BLOCK_RECORD(input_block, IMPORTED_MODULE);
@@ -1210,9 +1211,9 @@ void Serializer::writeHeader() {
         StrictMemorySafety.emit(ScratchRecord);
       }
 
-      if (M->deferredCodeGen()) {
-        options_block::DeferredCodeGenLayout DeferredCodeGen(Out);
-        DeferredCodeGen.emit(ScratchRecord);
+      {
+        options_block::CodeGenerationModelLayout codeGenModel(Out);
+        codeGenModel.emit(ScratchRecord, static_cast<unsigned>(M->codeGenerationModel()));
       }
 
       if (M->hasCxxInteroperability()) {
@@ -1224,6 +1225,10 @@ void Serializer::writeHeader() {
         CXXStdlibKind.emit(ScratchRecord,
                            static_cast<uint8_t>(M->getCXXStdlibKind()));
       }
+
+      options_block::LibraryLevelLayout LibLevel(Out);
+      LibLevel.emit(ScratchRecord,
+                    unsigned(M->getASTContext().LangOpts.LibraryLevel));
 
       if (M->isAggressiveCMOEnabled()) {
         options_block::AggressiveCMOEnabledLayout AggressiveCMOEnabled(Out);
@@ -1672,7 +1677,8 @@ getRawStableActorIsolationKind(swift::ActorIsolation::Kind kind) {
   CASE(Unspecified)
   CASE(ActorInstance)
   CASE(Nonisolated)
-  CASE(CallerIsolationInheriting)
+  CASE(NonisolatedConcurrent)
+  CASE(NonisolatedNonsending)
   CASE(NonisolatedUnsafe)
   CASE(GlobalActor)
   CASE(Erased)
@@ -2043,6 +2049,7 @@ void Serializer::writeLocalNormalProtocolConformance(
   switch (auto isolation = conformance->getIsolation()) {
   case swift::ActorIsolation::Unspecified:
   case swift::ActorIsolation::Nonisolated:
+  case swift::ActorIsolation::NonisolatedConcurrent:
     break;
 
   case swift::ActorIsolation::GlobalActor:
@@ -2052,7 +2059,7 @@ void Serializer::writeLocalNormalProtocolConformance(
   case swift::ActorIsolation::ActorInstance:
   case swift::ActorIsolation::NonisolatedUnsafe:
   case swift::ActorIsolation::Erased:
-  case swift::ActorIsolation::CallerIsolationInheriting:
+  case swift::ActorIsolation::NonisolatedNonsending:
     llvm_unreachable("Conformances cannot have this kind of isolation");
   }
 
@@ -2847,7 +2854,8 @@ void Serializer::writeLifetimeDependencies(
     LifetimeDependenceLayout::emitRecord(
         Out, ScratchRecord, abbrCode, info.getTargetIndex(),
         info.getParamIndicesLength(), info.hasImmortalSpecifier(),
-        info.isFromAnnotation(), info.hasInheritLifetimeParamIndices(),
+        info.isFromAnnotation(), info.hasCaptures(),
+        info.hasInheritLifetimeParamIndices(),
         info.hasScopeLifetimeParamIndices(), info.hasAddressableParamIndices(),
         paramIndices);
     paramIndices.clear();
@@ -6231,7 +6239,7 @@ public:
         S.Out, S.ScratchRecord, abbrCode, fnTy->isSendable(),
         fnTy->isAsync(), stableCoroutineKind, stableCalleeConvention,
         stableRepresentation, fnTy->isPseudogeneric(), fnTy->isNoEscape(),
-        fnTy->isUnimplementable(), fnTy->hasErasedIsolation(),
+        fnTy->isUnimplementable(), fnTy->getIsolation().getKind(),
         stableDiffKind, fnTy->hasErrorResult(),
         fnTy->getParameters().size(),
         fnTy->getNumYields(), fnTy->getNumResults(),

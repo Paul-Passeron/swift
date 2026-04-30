@@ -1981,6 +1981,16 @@ OverloadChoice::getIUOReferenceKind(ConstraintSystem &cs,
   if (!decl || !decl->isImplicitlyUnwrappedOptional())
     return std::nullopt;
 
+  // A variable or parameter spelled with an IUO type (`x: T!`) is always an
+  // IUO value; only functions and subscripts can carry an IUO on the return.
+  // Short-circuit here so we don't force the declaration's interface type.
+  // Doing so while the solver is mid-closure can re-enter
+  // `typeCheckPatternBinding` from outside the closure's own type-check
+  // context and trip the assertion in `TypeChecker::typeCheckBinding` (see
+  // https://github.com/swiftlang/swift/issues/88530).
+  if (isa<VarDecl>(decl))
+    return IUOReferenceKind::Value;
+
   // If this isn't an IUO return () -> T!, it's an IUO value.
   if (!decl->getInterfaceType()->is<AnyFunctionType>())
     return IUOReferenceKind::Value;
@@ -5207,7 +5217,8 @@ ConstraintSystem::inferKeyPathLiteralCapability(KeyPathExpr *keyPath) {
       switch (getActorIsolation(choice.getDecl())) {
       case ActorIsolation::Unspecified:
       case ActorIsolation::Nonisolated:
-      case ActorIsolation::CallerIsolationInheriting:
+      case ActorIsolation::NonisolatedConcurrent:
+      case ActorIsolation::NonisolatedNonsending:
       case ActorIsolation::NonisolatedUnsafe:
         break;
 
@@ -5348,4 +5359,24 @@ bool constraints::isResultBuilderMethodReference(ASTContext &ctx,
   return llvm::any_of(builderMethods, [&](const Identifier &methodId) {
     return UDE->getName().compare(DeclNameRef(methodId)) == 0;
   });
+}
+
+bool constraints::isGenericOnlyOverThrownType(AbstractFunctionDecl *func) {
+  // If a function has been converted to typed throws, let's ignore it
+  // when it's generic only over a thrown type now just like we would
+  // regular `throws` version.
+  auto thrownType = func->getThrownInterfaceType();
+  if (!thrownType || !thrownType->hasTypeParameter())
+    return false;
+
+  // If there is only one generic parameter, check if it appears
+  // inside of thrown type i.e. `throws(E)` or `throws(MyError<E>)`.
+
+  auto genericParams = func->getGenericParams();
+  if (genericParams->size() != 1)
+    return false;
+
+  auto paramTy = genericParams->getParams().front()->getDeclaredInterfaceType();
+  return thrownType.findIf(
+      [&paramTy](Type type) { return type->isEqual(paramTy); });
 }
