@@ -396,10 +396,6 @@ static ValueDecl *deriveAdditiveArithmeticViaMacro(DerivedConformance &der,
   );
 
   assert(val && "Macro expansion did not produce a witness");
-  llvm::errs() << "\n";
-  val->print(llvm::errs(), PrintOptions::printEverything());
-  llvm::errs() << "\n";
-
   (void)nominalDecl->getEffectiveMemberwiseInitializer();
 
   return val;
