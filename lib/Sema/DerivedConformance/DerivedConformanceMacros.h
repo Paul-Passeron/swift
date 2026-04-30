@@ -10,7 +10,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-//  This file declares the interface for evaluating built-in macros that
+//  This file declares the interface for evaluating synthesized macros that
 //  synthesize compiler-derived protocol conformances.
 //
 //===----------------------------------------------------------------------===//
@@ -21,16 +21,12 @@
 #include "DerivedConformance/DerivedConformance.h"
 #include "swift/AST/ASTBridging.h"
 #include "swift/AST/Decl.h"
-#include "swift/AST/DiagnosticEngine.h"
 #include "swift/Basic/BasicBridging.h"
+
 namespace swift {
 
 bool isAstGenMacro(MacroDecl *macro);
 
-std::unique_ptr<llvm::MemoryBuffer> evaluateASTGenMacroBuffer(ASTContext &ctx,
-                                                              MacroDecl *macro,
-                                                              Decl *decl,
-                                                              CustomAttr *attr);
 std::unique_ptr<llvm::MemoryBuffer> getBufferForAstGenMacro(char *outBuffer,
                                                             size_t outLen);
 
@@ -49,48 +45,19 @@ MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
 SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived,
                                        ValueDecl *requirement);
 
-// ==== Equatable =============================================================
+ValueDecl *handleDerivedNode(DerivedConformance &der, ASTContext &ctx, ASTNode node);
 
-struct EnumCaseInfo {
-  const char *caseName;
-  const char *const *argLabels;
-  size_t argCount;
-  bool isUnavailable;
-};
+MacroExpansionDecl *createMacroExpansionForConformanceDerivation(
+    DerivedConformance &der, ValueDecl *requirement, StringRef code);
 
-std::unique_ptr<llvm::MemoryBuffer>
-evaluateEquatableStructMacroBuffer(ASTContext &ctx, AbstractFunctionDecl *fn,
-                                   MacroDecl *macro, CustomAttr *attr);
+ValueDecl *deriveRequirementViaMacro( DerivedConformance &der, ValueDecl *requirement, StringRef code);
 
-std::unique_ptr<llvm::MemoryBuffer>
-evaluateEquatableEnumMacroBuffer(ASTContext &ctx, AbstractFunctionDecl *fn,
-                                 MacroDecl *macro, CustomAttr *attr);
-
-std::unique_ptr<llvm::MemoryBuffer>
-evaluateEquatableDeclMacroBuffer(ASTContext &ctx, TypeDecl *ty,
-                                 MacroExpansionDecl *expansion,
-                                 MacroDecl *macro);
-
-extern "C" bool
-swift_ASTGen_expandEquatableStructMacro(const char *const *propertyNames,
-                                        size_t count, char **outBuffer,
-                                        size_t *outLen);
-
-extern "C" bool swift_ASTGen_expandEquatableEnumMacro(void *caseInfos,
-                                                      size_t caseCount,
-                                                      char **outBufferPtr,
-                                                      size_t *outBufferLen);
-
-extern "C" bool swift_ASTGen_expandEquatableDeclMacro(
-    bool isEnum, // False means the type is a struct
-    char **outBufferPtr, size_t *outBufferLen);
-
+// ASTGen
 extern "C" bool swift_Macros_expandFreestandingMacroSynthetic(
     BridgedASTContext cContext, const void *macroPtr, const char *discriminator,
     uint8_t rawMacroRole, BridgedStringRef macroNameText,
     BridgedStringRef argumentListText, BridgedStringRef *expandedSourceOutPtr);
 
-// ==== /Equatable ============================================================
 
 } // namespace swift
 

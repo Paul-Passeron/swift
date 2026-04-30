@@ -84,64 +84,10 @@ static Type deriveCaseIterable_AllCases(DerivedConformance &derived) {
 
 static ValueDecl *deriveCaseIterableAllCasesViaMacro(DerivedConformance &der,
                                                      ValueDecl *requirement) {
-
-  auto *parentDc = der.getConformanceContext();
-  auto &C = parentDc->getASTContext();
-  auto atLoc = der.Nominal->getLoc();
-
   std::string code = "#deriveCaseIterable(\n";
   code += getDerivedConformanceMacroArg(der, requirement);
   code += ")";
-
-  auto bufferID = registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, der);
-  auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
-                                         bufferID, parentDc);
-
-  auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
-  eInfo->SigilLoc = atLoc;
-  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
-
-  der.addMemberToConformanceContext(free, nullptr);
-
-  ValueDecl *val = nullptr;
-  free->forEachExpandedNode([&](ASTNode node) {
-    auto *decl = node.dyn_cast<Decl *>();
-    auto thisBuffer = C.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
-    auto *SF = C.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
-    auto scope = SF->getScope();
-    scope.buildFullyExpandedTree();
-    decl->setDeclContext(der.getConformanceContext());
-    decl->setImplicit(true);
-    if (isa<PatternBindingDecl>(decl)) {
-      return;
-    }
-    auto vdecl = dyn_cast<ValueDecl>(decl);
-    assert(vdecl);
-    vdecl->setSynthesized();
-    if (!vdecl->hasAccess()) {
-      vdecl->copyFormalAccessFrom(der.Nominal,
-                                  /*sourceIsParentContext=*/true);
-    } else {
-      vdecl->overwriteAccess(der.Nominal->getFormalAccess());
-    }
-    val = vdecl;
-    if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
-      vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
-      if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
-        getter->setImplicit();
-        getter->setSynthesized();
-        if (!getter->hasAccess()) {
-          getter->copyFormalAccessFrom(der.Nominal,
-                                       /*sourceIsParentContext=*/true);
-        } else {
-          getter->overwriteAccess(der.Nominal->getFormalAccess());
-        }
-        getter->setIsTransparent(false);
-      }
-      val = vdecl;
-    }
-  });
-
+  auto *val = deriveRequirementViaMacro(der, requirement, code);
   assert(val && "Macro expansion did not produce a witness");
   return val;
 }

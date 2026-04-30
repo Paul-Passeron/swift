@@ -16,11 +16,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "DerivedConformanceMacros.h"
+#include "CodeSynthesis.h"
 #include "swift/AST/ASTContext.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/DeclContext.h"
 #include "swift/AST/LayoutConstraint.h"
 #include "swift/AST/MacroDefinition.h"
+#include "swift/AST/NameLookup.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -34,27 +36,6 @@ bool swift::isAstGenMacro(MacroDecl *macro) {
   }
   auto builtinKind = macroDef.getBuiltinKind();
   return builtinKind == BuiltinMacroKind::DerivedConformanceMacro;
-}
-
-std::unique_ptr<llvm::MemoryBuffer>
-swift::evaluateASTGenMacroBuffer(ASTContext &ctx, MacroDecl *macro, Decl *decl,
-                                 CustomAttr *attr) {
-  if (auto *fn = dyn_cast<AbstractFunctionDecl>(decl)) {
-
-    if (macro->getBaseName() == "EquatableStructMacro") {
-      return evaluateEquatableStructMacroBuffer(ctx, fn, macro, attr);
-    }
-    if (macro->getBaseName() == "EquatableEnumMacro") {
-      return evaluateEquatableEnumMacroBuffer(ctx, fn, macro, attr);
-    }
-  } else if (auto *expansion = dyn_cast<MacroExpansionDecl>(decl)) {
-    if (macro->getBaseName() == "EquatableDeclMacro") {
-      return evaluateEquatableDeclMacroBuffer(
-          ctx, expansion->getDeclContext()->getSelfNominalTypeDecl(), expansion,
-          macro);
-    }
-  }
-  return nullptr;
 }
 
 std::string swift::getUniqueASTGenBufferName() {
@@ -78,7 +59,6 @@ const char *swift::cloneString(llvm::BumpPtrAllocator &allocator,
   memcpy(buf, str.data(), len);
   return buf;
 }
-
 
 unsigned swift::registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
                                                DeclContext *parentDc,
@@ -115,7 +95,6 @@ MacroExpansionDecl *swift::parseSynthesizedMacroDecl(ASTContext &ctx,
   return free;
 }
 
-
 SourceLoc swift::getValidSourceLocForImplicit(DerivedConformance &derived,
                                               ValueDecl *requirement) {
   auto atLoc = derived.Conformance->getLoc();
@@ -136,4 +115,81 @@ SourceLoc swift::getValidSourceLocForImplicit(DerivedConformance &derived,
   atLoc = derived.Nominal->getBraces().End.getAdvancedLocOrInvalid(-1);
   assert(atLoc.isValid() && "Conformance loc is invalid");
   return atLoc;
+}
+
+ValueDecl *swift::handleDerivedNode(DerivedConformance &der, ASTContext &ctx,
+                                    ASTNode node) {
+  auto *decl = node.dyn_cast<Decl *>();
+  auto thisBuffer = ctx.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
+  auto *SF = ctx.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
+  auto scope = SF->getScope();
+  scope.buildFullyExpandedTree();
+
+  decl->setDeclContext(der.getConformanceContext());
+  decl->setImplicit(true);
+
+  if (isa<PatternBindingDecl>(decl)) {
+    return nullptr;
+  }
+  auto vdecl = dyn_cast<ValueDecl>(decl);
+  assert(vdecl);
+  if (!vdecl->hasAccess()) {
+    vdecl->copyFormalAccessFrom(der.Nominal,
+                                /*sourceIsParentContext=*/true);
+  } else {
+    vdecl->overwriteAccess(der.Nominal->getFormalAccess());
+  }
+
+  if (auto fdecl = dyn_cast<AbstractFunctionDecl>(decl)) {
+    addNonIsolatedToSynthesized(der, fdecl);
+    fdecl->getMacroExpandedBody();
+  }
+  if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
+    vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
+    if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
+      getter->setImplicit();
+      getter->setSynthesized();
+      if (!getter->hasAccess()) {
+        getter->copyFormalAccessFrom(der.Nominal,
+                                     /*sourceIsParentContext=*/true);
+      } else {
+        getter->overwriteAccess(der.Nominal->getFormalAccess());
+      }
+    }
+  }
+  return vdecl;
+}
+
+MacroExpansionDecl *swift::createMacroExpansionForConformanceDerivation(
+    DerivedConformance &der, ValueDecl *requirement, StringRef code) {
+  auto *parentDc = der.getConformanceContext();
+  auto &ctx = parentDc->getASTContext();
+  auto atLoc = getValidSourceLocForImplicit(der, requirement);
+  auto bufferID =
+      registerSynthesizedMacroBuffer(ctx, code, parentDc, atLoc, der);
+  auto *free = parseSynthesizedMacroDecl(ctx, requirement->getModuleContext(),
+                                         bufferID, parentDc);
+
+  auto *eInfo = free->getExpansionInfo();
+  eInfo->SigilLoc = atLoc;
+  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
+
+  der.addMemberToConformanceContext(free, nullptr);
+  return free;
+}
+
+ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &der,
+                                            ValueDecl *requirement,
+                                            StringRef code) {
+  auto *parentDc = der.getConformanceContext();
+  auto &ctx = parentDc->getASTContext();
+  auto *free =
+      createMacroExpansionForConformanceDerivation(der, requirement, code);
+  ValueDecl *val = nullptr;
+  free->forEachExpandedNode([&](ASTNode node) {
+    if (auto vdecl = handleDerivedNode(der, ctx, node)) {
+      val = vdecl;
+    }
+  });
+  return val;
 }

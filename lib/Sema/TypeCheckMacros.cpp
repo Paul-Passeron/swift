@@ -1247,8 +1247,9 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
         break;
       }
       case BuiltinMacroKind::DerivedConformanceMacro:
-        evaluatedSource = evaluateASTGenMacroBuffer(
-            ctx, macro, expansion->getASTNode().dyn_cast<Decl *>(), nullptr);
+      llvm_unreachable("deprecated");
+        // evaluatedSource = evaluateASTGenMacroBuffer(
+        //     ctx, macro, expansion->getASTNode().dyn_cast<Decl *>(), nullptr);
       }
       break;
     }
@@ -1605,9 +1606,7 @@ evaluateAttachedMacro(MacroDecl *macro, Decl *attachedTo, CustomAttr *attr,
       llvm_unreachable("");
       return nullptr;
     case BuiltinMacroKind::DerivedConformanceMacro: {
-      auto *fn = dyn_cast<AbstractFunctionDecl>(attachedTo);
-      evaluatedSource = evaluateASTGenMacroBuffer(ctx, macro, fn, attr);
-      break;
+      llvm_unreachable("deprecated");
     }
     }
     break;

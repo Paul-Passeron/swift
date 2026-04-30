@@ -459,36 +459,10 @@ static ValueDecl *deriveEquatable_eq(
 
 static ValueDecl *deriveEquatableViaMacro(DerivedConformance &der,
                                           ValueDecl *requirement) {
-  auto *parentDc = der.getConformanceContext();
-  auto &C = parentDc->getASTContext();
-  auto atLoc = getValidSourceLocForImplicit(der, requirement);
-
   std::string code = "#deriveComparison(\"==\",\n";
   code += getDerivedConformanceMacroArg(der, requirement);
   code += ")";
-
-  auto bufferID = registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, der);
-  auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
-                                         bufferID, parentDc);
-
-  auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
-  eInfo->SigilLoc = atLoc;
-  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
-
-  der.addMemberToConformanceContext(free, nullptr);
-
-  ValueDecl *val = nullptr;
-  free->forEachExpandedNode([&](ASTNode node) {
-    auto *decl = node.dyn_cast<Decl *>();
-    assert(decl && "macro expansion node is not a Decl");
-    auto *fdecl = dyn_cast<FuncDecl>(decl);
-    assert(fdecl);
-    fdecl->setSynthesized();
-    fdecl->getMacroExpandedBody();
-    addNonIsolatedToSynthesized(der, fdecl);
-    val = static_cast<ValueDecl *>(fdecl);
-    assert(val);
-  });
+  auto *val = deriveRequirementViaMacro(der, requirement, code);
   assert(val);
   return val;
 }
@@ -1007,71 +981,11 @@ buildHashableMacroSource(DerivedConformance &derived, ValueDecl *requirement) {
 
 static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
                                          ValueDecl *requirement) {
-
-  auto *parentDc = der.getConformanceContext();
-  auto &ctx = parentDc->getASTContext();
-  auto atLoc = getValidSourceLocForImplicit(der, requirement);
-
   auto code = buildHashableMacroSource(der, requirement);
   if (!code) {
     return nullptr;
   }
-  auto bufferID =
-      registerSynthesizedMacroBuffer(ctx, *code, parentDc, atLoc, der);
-  auto *free = parseSynthesizedMacroDecl(ctx, requirement->getModuleContext(),
-                                         bufferID, parentDc);
-
-  auto *eInfo = free->getExpansionInfo();
-  eInfo->SigilLoc = atLoc;
-  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
-
-  der.addMemberToConformanceContext(free, nullptr);
-  ValueDecl *val = nullptr;
-  free->forEachExpandedNode([&](ASTNode node) {
-    auto *decl = node.dyn_cast<Decl *>();
-    auto thisBuffer =
-        ctx.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
-    auto *SF = ctx.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
-    auto scope = SF->getScope();
-    scope.buildFullyExpandedTree();
-
-    decl->setDeclContext(der.getConformanceContext());
-    decl->setImplicit(true);
-
-    if (isa<PatternBindingDecl>(decl)) {
-      return;
-    }
-    auto vdecl = dyn_cast<ValueDecl>(decl);
-    assert(vdecl);
-    vdecl->setSynthesized();
-    if (!vdecl->hasAccess()) {
-      vdecl->copyFormalAccessFrom(der.Nominal,
-                                  /*sourceIsParentContext=*/true);
-    } else {
-      vdecl->overwriteAccess(der.Nominal->getFormalAccess());
-    }
-    val = vdecl;
-    if (auto fdecl = dyn_cast<AbstractFunctionDecl>(decl)) {
-      addNonIsolatedToSynthesized(der, fdecl);
-      (void)fdecl->getMacroExpandedBody();
-    }
-    if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
-      vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
-      if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
-        getter->setImplicit();
-        getter->setSynthesized();
-        if (!getter->hasAccess()) {
-          getter->copyFormalAccessFrom(der.Nominal,
-                                       /*sourceIsParentContext=*/true);
-        } else {
-          getter->overwriteAccess(der.Nominal->getFormalAccess());
-        }
-        getter->setIsTransparent(false);
-      }
-    }
-  });
-  assert(val && "Macro expansion did not produce a witness");
-  return val;
+  return deriveRequirementViaMacro(der, requirement, *code);
 }
 
 static ValueDecl *deriveHashable(DerivedConformance &der,
@@ -1199,97 +1113,97 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
   return ::deriveHashable(*this, requirement);
 }
 
-std::unique_ptr<llvm::MemoryBuffer> swift::evaluateEquatableEnumMacroBuffer(
-    ASTContext &ctx,
-    AbstractFunctionDecl *fn, // Can be null if not a body macro
-    MacroDecl *macro, CustomAttr *attr) {
-  auto *parent = fn->getParent();
-  assert(parent && "Should have a parent context");
+// std::unique_ptr<llvm::MemoryBuffer> swift::evaluateEquatableEnumMacroBuffer(
+//     ASTContext &ctx,
+//     AbstractFunctionDecl *fn, // Can be null if not a body macro
+//     MacroDecl *macro, CustomAttr *attr) {
+//   auto *parent = fn->getParent();
+//   assert(parent && "Should have a parent context");
 
-  auto *enum_decl = parent->getSelfEnumDecl();
-  assert(parent && "Self should be a enum type");
+//   auto *enum_decl = parent->getSelfEnumDecl();
+//   assert(parent && "Self should be a enum type");
 
-  llvm::BumpPtrAllocator alloc; // Bump allocator for strings
-  SmallVector<EnumCaseInfo, 6> cases;
+//   llvm::BumpPtrAllocator alloc; // Bump allocator for strings
+//   SmallVector<EnumCaseInfo, 6> cases;
 
-  for (const auto *elt : enum_decl->getAllElements()) {
-    SmallVector<const char *, 6> *argLabels =
-        new (alloc) SmallVector<const char *, 6>();
-    const char *name =
-        cloneString(alloc, elt->getBaseIdentifier().str().data());
-    if (elt->hasAssociatedValues()) {
-      auto payloadType = elt->getPayloadInterfaceType();
-      if (auto tupleType = payloadType->getAs<TupleType>()) {
-        for (auto tupleElement : tupleType->getElements()) {
-          if (tupleElement.hasName()) {
-            argLabels->emplace_back(
-                cloneString(alloc, tupleElement.getName().str().data()));
-          } else {
-            argLabels->emplace_back(nullptr);
-          }
-        }
-      } else {
-        // TODO: is this right ?
-        argLabels->emplace_back(nullptr);
-      }
-    }
-    bool isUnavailable = elt->isUnreachableAtRuntime() &&
-                         !elt->getParentEnum()->isUnreachableAtRuntime() &&
-                         ctx.getDiagnoseUnavailableCodeReached() != nullptr;
-    cases.emplace_back((EnumCaseInfo){.caseName = name,
-                                      .argLabels = argLabels->data(),
-                                      .argCount = argLabels->size(),
-                                      .isUnavailable = isUnavailable});
-  }
+//   for (const auto *elt : enum_decl->getAllElements()) {
+//     SmallVector<const char *, 6> *argLabels =
+//         new (alloc) SmallVector<const char *, 6>();
+//     const char *name =
+//         cloneString(alloc, elt->getBaseIdentifier().str().data());
+//     if (elt->hasAssociatedValues()) {
+//       auto payloadType = elt->getPayloadInterfaceType();
+//       if (auto tupleType = payloadType->getAs<TupleType>()) {
+//         for (auto tupleElement : tupleType->getElements()) {
+//           if (tupleElement.hasName()) {
+//             argLabels->emplace_back(
+//                 cloneString(alloc, tupleElement.getName().str().data()));
+//           } else {
+//             argLabels->emplace_back(nullptr);
+//           }
+//         }
+//       } else {
+//         // TODO: is this right ?
+//         argLabels->emplace_back(nullptr);
+//       }
+//     }
+//     bool isUnavailable = elt->isUnreachableAtRuntime() &&
+//                          !elt->getParentEnum()->isUnreachableAtRuntime() &&
+//                          ctx.getDiagnoseUnavailableCodeReached() != nullptr;
+//     cases.emplace_back((EnumCaseInfo){.caseName = name,
+//                                       .argLabels = argLabels->data(),
+//                                       .argCount = argLabels->size(),
+//                                       .isUnavailable = isUnavailable});
+//   }
 
-  char *outBuffer;
-  size_t outLen;
-  if (!swift_ASTGen_expandEquatableEnumMacro(cases.data(), cases.size(),
-                                             &outBuffer, &outLen)) {
-    return nullptr;
-  }
+//   char *outBuffer;
+//   size_t outLen;
+//   if (!swift_ASTGen_expandEquatableEnumMacro(cases.data(), cases.size(),
+//                                              &outBuffer, &outLen)) {
+//     return nullptr;
+//   }
 
-  return getBufferForAstGenMacro(outBuffer, outLen);
-}
+//   return getBufferForAstGenMacro(outBuffer, outLen);
+// }
 
-std::unique_ptr<llvm::MemoryBuffer>
-swift::evaluateEquatableDeclMacroBuffer(ASTContext &ctx, TypeDecl *ty,
-                                        MacroExpansionDecl *expansion,
-                                        MacroDecl *macro) {
-  char *outBuffer;
-  size_t outLen;
-  if (!swift_ASTGen_expandEquatableDeclMacro(isa<EnumDecl>(ty), &outBuffer,
-                                             &outLen)) {
-    return nullptr;
-  }
-  return getBufferForAstGenMacro(outBuffer, outLen);
-}
+// std::unique_ptr<llvm::MemoryBuffer>
+// swift::evaluateEquatableDeclMacroBuffer(ASTContext &ctx, TypeDecl *ty,
+//                                         MacroExpansionDecl *expansion,
+//                                         MacroDecl *macro) {
+//   char *outBuffer;
+//   size_t outLen;
+//   if (!swift_ASTGen_expandEquatableDeclMacro(isa<EnumDecl>(ty), &outBuffer,
+//                                              &outLen)) {
+//     return nullptr;
+//   }
+//   return getBufferForAstGenMacro(outBuffer, outLen);
+// }
 
-std::unique_ptr<llvm::MemoryBuffer>
-swift::evaluateEquatableStructMacroBuffer(ASTContext &ctx,
-                                          AbstractFunctionDecl *fn,
-                                          MacroDecl *macro, CustomAttr *attr) {
-  auto *parent = fn->getParent();
-  assert(parent && "Should have a parent context");
+// std::unique_ptr<llvm::MemoryBuffer>
+// swift::evaluateEquatableStructMacroBuffer(ASTContext &ctx,
+//                                           AbstractFunctionDecl *fn,
+//                                           MacroDecl *macro, CustomAttr *attr) {
+//   auto *parent = fn->getParent();
+//   assert(parent && "Should have a parent context");
 
-  auto *struct_decl = parent->getSelfStructDecl();
-  assert(parent && "Self should be a struct type");
+//   auto *struct_decl = parent->getSelfStructDecl();
+//   assert(parent && "Self should be a struct type");
 
-  SmallVector<const char *, 6> fieldNames;
-  auto alloc = llvm::BumpPtrAllocator();
-  for (auto propertyDecl : struct_decl->getStoredProperties()) {
-    if (!propertyDecl->isUserAccessible())
-      continue;
-    fieldNames.emplace_back(
-        cloneString(alloc, propertyDecl->getNameStr().str().c_str()));
-  }
+//   SmallVector<const char *, 6> fieldNames;
+//   auto alloc = llvm::BumpPtrAllocator();
+//   for (auto propertyDecl : struct_decl->getStoredProperties()) {
+//     if (!propertyDecl->isUserAccessible())
+//       continue;
+//     fieldNames.emplace_back(
+//         cloneString(alloc, propertyDecl->getNameStr().str().c_str()));
+//   }
 
-  char *outBuffer;
-  size_t outLen;
-  const char *const *propertyNames = fieldNames.data();
-  if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
-                                               &outBuffer, &outLen)) {
-    return nullptr;
-  }
-  return getBufferForAstGenMacro(outBuffer, outLen);
-}
+//   char *outBuffer;
+//   size_t outLen;
+//   const char *const *propertyNames = fieldNames.data();
+//   if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
+//                                                &outBuffer, &outLen)) {
+//     return nullptr;
+//   }
+//   return getBufferForAstGenMacro(outBuffer, outLen);
+// }

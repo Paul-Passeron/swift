@@ -350,56 +350,17 @@ static ValueDecl *deriveAdditiveArithmeticViaMacro(DerivedConformance &der,
   der.addMemberToConformanceContext(free, nullptr);
   ValueDecl *val = nullptr;
   free->forEachExpandedNode([&](ASTNode node) {
-    auto *decl = node.dyn_cast<Decl *>();
-    auto thisBuffer =
-        ctx.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
-    auto *SF = ctx.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0];
-    auto scope = SF->getScope();
-    scope.buildFullyExpandedTree();
-
-    decl->setDeclContext(der.getConformanceContext());
-    decl->setImplicit(true);
-
-    if (isa<PatternBindingDecl>(decl)) {
-      return;
-    }
-    auto vdecl = dyn_cast<ValueDecl>(decl);
-    assert(vdecl);
-    // vdecl->setSynthesized();
-    if (!vdecl->hasAccess()) {
-      vdecl->copyFormalAccessFrom(der.Nominal,
-                                  /*sourceIsParentContext=*/true);
-    } else {
-      vdecl->overwriteAccess(der.Nominal->getFormalAccess());
-    }
-
-    val = vdecl;
-    if (auto fdecl = dyn_cast<AbstractFunctionDecl>(decl)) {
-      addNonIsolatedToSynthesized(der, fdecl);
-      fdecl->getMacroExpandedBody();
-    }
-    if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
-      vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
-      if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
-        getter->setImplicit();
-        getter->setSynthesized();
-        if (!getter->hasAccess()) {
-          getter->copyFormalAccessFrom(der.Nominal,
-                                       /*sourceIsParentContext=*/true);
-        } else {
-          getter->overwriteAccess(der.Nominal->getFormalAccess());
-        }
-      }
+    if(auto vdecl = handleDerivedNode(der, ctx, node)) {
       val = vdecl;
     }
   }
   );
-
   assert(val && "Macro expansion did not produce a witness");
   (void)nominalDecl->getEffectiveMemberwiseInitializer();
-
   return val;
 }
+
+
 
 ValueDecl *
 DerivedConformance::deriveAdditiveArithmetic(ValueDecl *requirement) {

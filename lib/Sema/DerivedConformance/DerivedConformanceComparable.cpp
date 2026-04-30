@@ -293,37 +293,10 @@ static ValueDecl *deriveComparableViaMacros(DerivedConformance &der,
     requirement->diagnose(diag::broken_comparable_requirement);
     return nullptr;
   }
-
-  auto atLoc = der.Nominal->getLoc();
-  auto *parentDc = der.getConformanceContext();
-  auto &C = parentDc->getASTContext();
-
   std::string code = "#deriveComparison(\"<\",\n";
   code += getDerivedConformanceMacroArg(der, requirement);
   code += ")";
-
-  auto bufferID = registerSynthesizedMacroBuffer(C, code, parentDc, atLoc, der);
-  auto *free = parseSynthesizedMacroDecl(C, requirement->getModuleContext(),
-                                         bufferID, parentDc);
-
-  auto *eInfo = const_cast<MacroExpansionInfo *>(free->getExpansionInfo());
-  eInfo->SigilLoc = atLoc;
-  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
-
-  der.addMemberToConformanceContext(free, nullptr);
-
-  ValueDecl *val = nullptr;
-  free->forEachExpandedNode([&](ASTNode node) {
-    auto *decl = node.dyn_cast<Decl *>();
-    assert(decl && "macro expansion node is not a Decl");
-    auto *fdecl = dyn_cast<FuncDecl>(decl);
-    assert(fdecl);
-    fdecl->getMacroExpandedBody();
-    fdecl->setUserAccessible(false);
-    addNonIsolatedToSynthesized(der, fdecl);
-    val = static_cast<ValueDecl *>(fdecl);
-    assert(val);
-  });
+  auto *val = deriveRequirementViaMacro(der, requirement, code);
   assert(val);
   return val;
 }
