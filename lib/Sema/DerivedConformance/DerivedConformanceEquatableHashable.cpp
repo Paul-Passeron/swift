@@ -483,8 +483,8 @@ static ValueDecl *deriveEquatableViaMacro(DerivedConformance &der,
     assert(decl && "macro expansion node is not a Decl");
     auto *fdecl = dyn_cast<FuncDecl>(decl);
     assert(fdecl);
+    fdecl->setSynthesized();
     fdecl->getMacroExpandedBody();
-    fdecl->setUserAccessible(false);
     addNonIsolatedToSynthesized(der, fdecl);
     val = static_cast<ValueDecl *>(fdecl);
     assert(val);
@@ -1050,13 +1050,12 @@ static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
     } else {
       vdecl->overwriteAccess(der.Nominal->getFormalAccess());
     }
-
     val = vdecl;
     if (auto fdecl = dyn_cast<AbstractFunctionDecl>(decl)) {
       addNonIsolatedToSynthesized(der, fdecl);
+      (void)fdecl->getMacroExpandedBody();
     }
     if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
-      vdecl->setInterfaceType(ctx.getIntType());
       vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
       if (auto *getter = vdecl->getAccessor(AccessorKind::Get)) {
         getter->setImplicit();
@@ -1069,10 +1068,8 @@ static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
         }
         getter->setIsTransparent(false);
       }
-      val = vdecl;
     }
   });
-
   assert(val && "Macro expansion did not produce a witness");
   return val;
 }
