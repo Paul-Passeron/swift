@@ -35,10 +35,9 @@ extension Requirement {
     switch self {
     case .add, .sub:
       return "a.\(member) \(operatorName) b.\(member)"
-    case .zero: return "0"
+    case .zero: return ".zero"
     }
   }
-
 }
 
 struct ArithmeticDerive {
