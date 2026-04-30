@@ -419,14 +419,13 @@ private:
     /// Whether this module enabled strict memory safety.
     unsigned StrictMemorySafety : 1;
 
-    /// The code generation model used by this module.
-    unsigned CodeGenModel : 2;
+    /// Whether this module used deferred code generation.
+    unsigned DeferredCodeGen : 1;
 
     /// Whether this module used deferred code generation.
     unsigned AggressiveCMOEnabled : 1;
 
-    /// Discriminator for library level (LibraryLevel enum).
-    unsigned LibraryLevel : 2;
+    // Explicitly pad out to the next word boundary if neccessary.
   } Bits = {};
   static_assert(sizeof(ModuleBits) <= 8, "The bit set should be small");
 
@@ -699,15 +698,9 @@ public:
 
   bool strictMemorySafety() const { return Bits.StrictMemorySafety; }
 
-  CodeGenerationModel codeGenerationModel() const {
-    return static_cast<CodeGenerationModel>(Bits.CodeGenModel);
-  }
+  bool deferredCodeGen() const { return Bits.DeferredCodeGen; }
 
   bool isAggressiveCMOEnabled() const { return Bits.AggressiveCMOEnabled; }
-
-  LibraryLevel getLibraryLevel() const {
-    return LibraryLevel(Bits.LibraryLevel);
-  }
 
   /// How should \p dependency be loaded for a transitive import via \c this?
   ///

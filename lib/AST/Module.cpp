@@ -46,7 +46,6 @@
 #include "swift/AST/Type.h"
 #include "swift/AST/TypeCheckRequests.h"
 #include "swift/Basic/Assertions.h"
-#include "swift/Basic/CodeGenerationModel.h"
 #include "swift/Basic/Compiler.h"
 #include "swift/Basic/Defer.h"
 #include "swift/Basic/SourceManager.h"
@@ -782,8 +781,7 @@ ModuleDecl::ModuleDecl(Identifier name, ASTContext &ctx,
   Bits.ModuleDecl.AllowNonResilientAccess = 0;
   Bits.ModuleDecl.SerializePackageEnabled = 0;
   Bits.ModuleDecl.StrictMemorySafety = 0;
-  Bits.ModuleDecl.CodeGenModel =
-      static_cast<unsigned>(CodeGenerationModel::Interface);
+  Bits.ModuleDecl.DeferredCodeGen = 0;
   Bits.ModuleDecl.AggressiveCMOEnabled = 0;
 
   // Populate the module's files.
@@ -3333,13 +3331,8 @@ ModuleLibraryLevelRequest::evaluate(Evaluator &evaluator,
     return ctx.LangOpts.LibraryLevel;
 
   } else {
-    // IPI is never returned by the path heuristic, so the stored value
-    // is the only way to detect it.
-    auto stored = module->getStoredLibraryLevel();
-    if (stored == LibraryLevel::IPI)
-      return stored;
-
-    // For API/SPI, use the path heuristic as before.
+    // Other Swift modules are SPI if they are from the PrivateFrameworks
+    // folder in the SDK.
     auto modulePath = module->getModuleFilename();
     return fromPrivateFrameworks(modulePath) ?
       LibraryLevel::SPI : LibraryLevel::API;

@@ -575,13 +575,6 @@ static std::string getLifetimeDependenceInfoSourceListString(
     }
     return result;
   };
-  if (info.hasCaptures()) {
-    if (!isFirstSpecifier) {
-      lifetimeDependenceString += ", ";
-    }
-    lifetimeDependenceString += LifetimeDescriptor::CapturesContextSpecifier;
-    isFirstSpecifier = false;
-  }
   if (info.hasImmortalSpecifier()) {
     if (!isFirstSpecifier) {
       lifetimeDependenceString += ", ";
@@ -4469,14 +4462,14 @@ void PrintAST::printOneParameter(const ParamDecl *param,
         !willUseTypeReprPrinting(TheTypeLoc, CurrentType, Options)) {
       auto type = TheTypeLoc.getType();
 
-      bool isNonisolatedNonsending = false;
+      bool isCallerIsolated = false;
       if (auto *funcTy = dyn_cast<AnyFunctionType>(interfaceTy.getPointer()))
-        isNonisolatedNonsending = funcTy->getIsolation().isNonisolatedNonsending();
+        isCallerIsolated = funcTy->getIsolation().isNonIsolatedCaller();
 
       // We suppress `@escaping` on enum element parameters because it cannot
       // be written explicitly in this position.
       printParameterFlags(Printer, Options, param, paramFlags,
-                          isEscaping(type) && !isEnumElement, isNonisolatedNonsending);
+                          isEscaping(type) && !isEnumElement, isCallerIsolated);
     }
 
     printTypeLoc(TheTypeLoc, getNonRecursiveOptions(param));
@@ -6862,22 +6855,6 @@ public:
     Printer << "(";
 
     auto Fields = T->getElements();
-
-    // Compact printing for homogeneous unlabeled tuples with 5+ elements.
-    if (Options.PrintHomogeneousTuplesCompactly && Fields.size() > 4) {
-      Type FirstEltType = Fields[0].getType();
-      bool IsHomogeneous = llvm::all_of(Fields, [&](const TupleTypeElt &elt) {
-        return !elt.hasName() && 
-               elt.getType()->isEqual(FirstEltType);
-      });
-
-      if (IsHomogeneous) {
-        visit(FirstEltType);
-        Printer << " /* ... repeated " << Fields.size() << " times ... */)";
-        return;
-      }
-    }
-
     for (unsigned i = 0, e = Fields.size(); i != e; ++i) {
       if (i)
         Printer << ", ";
@@ -7141,10 +7118,7 @@ public:
       ArrayRef<AnyFunctionType::Param> params = fnType->getParams();
 
       for (const auto &lifetimeDependence : info.getLifetimeDependencies()) {
-        // In .swiftinterface files, only print lifetime dependencies that
-        // originated from explicit @lifetime annotations.
-        if (!Options.IsForSwiftInterface ||
-            lifetimeDependence.isFromAnnotation()) {
+        if (lifetimeDependence.isFromAnnotation()) {
           Printer.printSwiftLifetimeDependence(lifetimeDependence, params);
         }
       }
@@ -7309,10 +7283,6 @@ public:
       Printer << ")";
       Printer.printStructurePost(PrintStructureKind::BuiltinAttribute);
       Printer << " ";
-    }
-
-    if (info.hasNonisolatedNonsendingIsolation()) {
-      Printer.printSimpleAttr("@caller_isolated") << " ";
     }
 
     if (info.hasErasedIsolation()) {

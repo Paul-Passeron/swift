@@ -358,7 +358,7 @@ extension _UnsafeBitset {
     wordCount: Int,
     body: (_UnsafeBitset) throws(E) -> R
   ) throws(E) -> R {
-    try withUnsafeTemporaryAllocation(
+    try unsafe withUnsafeTemporaryAllocation(
       of: _UnsafeBitset.Word.self, capacity: wordCount
     ) { (buffer: UnsafeMutableBufferPointer<_UnsafeBitset.Word>) throws(E) -> R in
       let bitset = unsafe _UnsafeBitset(

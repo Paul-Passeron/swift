@@ -1,5 +1,4 @@
 // RUN: %target-swift-frontend -I %S/Inputs -c -cxx-interoperability-mode=swift-5.9 %s -S -o - | %FileCheck %s
-// RUN: %target-swift-frontend -I %S/Inputs -c -cxx-interoperability-mode=swift-5.9 -g %s -S -o - | %FileCheck %s
 // RUN: %target-swift-frontend -I %S/Inputs -c %s -S -o - | %FileCheck %s
 
 // REQUIRES: objc_interop
@@ -10,5 +9,3 @@
 import NSOptionsMangling
 protocol Fooable { }
 extension UIControl.State: Fooable {}
-
-func foo(_ s: UIControl.State) {}

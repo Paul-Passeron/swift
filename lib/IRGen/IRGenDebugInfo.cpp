@@ -1228,8 +1228,7 @@ private:
     llvm::DINodeArray BoundParams = collectGenericParams(Type);
     llvm::DICompositeType *DITy = createStruct(
         Scope, Name, File, Line, SizeInBits, AlignInBits, Flags, MangledName,
-        DBuilder.getOrCreateArray(Members), BoundParams, SpecificationOf,
-        /*Annotations=*/nullptr);
+        DBuilder.getOrCreateArray(Members), BoundParams, SpecificationOf);
     return DBuilder.replaceTemporary(std::move(FwdDecl), DITy);
   }
 
@@ -1694,12 +1693,8 @@ private:
       InnerTypeCache[UID] = llvm::TrackingMDNodeRef(UniqueType);
     }
 
-    // CodeView drops empty unnamed members, so we need to give the inner struct
-    // member a name so it survives.
-    StringRef MemberName = Opts.isDebugInfoCodeView() ? MangledName : "";
     llvm::Metadata *Elements[] = {DBuilder.createMemberType(
-        Scope, MemberName, File, 0, SizeInBits, AlignInBits, 0, Flags,
-        UniqueType)};
+        Scope, "", File, 0, SizeInBits, AlignInBits, 0, Flags, UniqueType)};
     // FIXME: It's a limitation of LLVM that a forward declaration cannot have a
     // specificationOf, so this attritbute is put on the sized container type
     // instead. This is confusing consumers, and LLDB has to go out of its way
@@ -1879,13 +1874,12 @@ private:
                unsigned Line, unsigned SizeInBits, unsigned AlignInBits,
                llvm::DINode::DIFlags Flags, StringRef MangledName,
                llvm::DINodeArray Elements, llvm::DINodeArray BoundParams,
-               llvm::DIType *SpecificationOf, llvm::DINodeArray Annotations) {
+               llvm::DIType *SpecificationOf) {
 
     auto StructType = DBuilder.createStructType(
         Scope, Name, File, Line, SizeInBits, AlignInBits, Flags,
         /* DerivedFrom */ nullptr, Elements, llvm::dwarf::DW_LANG_Swift,
-        nullptr, MangledName, SpecificationOf,
-        /*NumExtraInhabitants=*/0, Annotations);
+        nullptr, MangledName, SpecificationOf);
 
     if (BoundParams)
       DBuilder.replaceArrays(StructType, nullptr, BoundParams);
@@ -1897,11 +1891,9 @@ private:
                      unsigned Line, unsigned SizeInBits, unsigned AlignInBits,
                      llvm::DINode::DIFlags Flags, StringRef MangledName,
                      llvm::DINodeArray BoundParams = {},
-                     llvm::DIType *SpecificationOf = nullptr,
-                     llvm::DINodeArray Annotations = nullptr) {
+                     llvm::DIType *SpecificationOf = nullptr) {
     return createStruct(Scope, Name, File, Line, SizeInBits, AlignInBits, Flags,
-                        MangledName, {}, BoundParams, SpecificationOf,
-                        Annotations);
+                        MangledName, {}, BoundParams, SpecificationOf);
   }
 
   bool shouldCacheDIType(llvm::DIType *DITy, DebugTypeInfo &DbgTy) {
@@ -2154,77 +2146,20 @@ private:
       }
       // If the existential is just a protocol type it shares its mangled name
       // with it, so we can just represent it directly as a protocol.
-      auto ProtoDbgTy = DebugTypeInfo::getFromTypeInfo(
-          TyPtr, IGM.getTypeInfoForUnlowered(TyPtr), IGM);
-      return getOrCreateType(ProtoDbgTy);
+      BaseTy = TyPtr;
     }
-
-    case TypeKind::ProtocolComposition: {
-      auto *CompTy = BaseTy->castTo<ProtocolCompositionType>();
-
-      // A composition's mangled name will always be that of the canonical
-      // composition type. This means that a composition can be canonicalized
-      // into a single protocol type. For example, given:
-      //
-      // protocol P {}
-      // typealias P2 = P
-      // func f(param: (any P & P2)) {}
-      //
-      // The canonical type of "param" is simply P. To make sure we don't have
-      // two conflicting types with the same mangled name (one being the
-      // protocol composition, the other being only the protocol), In that case,
-      // emit debug info as only the protocol type.
-      auto CanTy = BaseTy->getCanonicalType();
-      if (!isa<ProtocolCompositionType>(CanTy)) {
-        return getOrCreateDesugaredType(CanTy, DbgTy);
-      }
-
-      llvm::TempDICompositeType FwdDecl(DBuilder.createReplaceableCompositeType(
-          llvm::dwarf::DW_TAG_structure_type, MangledName, Scope, nullptr, 0,
-          llvm::dwarf::DW_LANG_Swift, SizeInBits, AlignInBits, Flags));
-
-      SmallVector<llvm::Metadata *, 4> Members;
-      for (const Type MemberTy : CompTy->getMembers()) {
-        auto MemberDbgTy = DebugTypeInfo::getFromTypeInfo(
-            MemberTy, IGM.getTypeInfoForUnlowered(MemberTy), IGM);
-        auto *MemberDITy = getOrCreateType(MemberDbgTy);
-        Members.push_back(
-            DBuilder.createInheritance(FwdDecl.get(), MemberDITy, 0, 0, Flags));
-      }
-
-      auto *DITy = DBuilder.createStructType(
-          Scope, MangledName, nullptr, 0, SizeInBits, AlignInBits, Flags,
-          nullptr, DBuilder.getOrCreateArray(Members),
-          llvm::dwarf::DW_LANG_Swift, /*VTableHolder=*/nullptr, MangledName);
-
-      return DBuilder.replaceTemporary(std::move(FwdDecl), DITy);
-    }
+      LLVM_FALLTHROUGH;
 
     // FIXME: (LLVM branch) This should probably be a DW_TAG_interface_type.
     case TypeKind::Protocol:
+    case TypeKind::ProtocolComposition:
     case TypeKind::ParameterizedProtocol: {
       auto *Decl = DbgTy.getDecl();
       auto L = getFileAndLocation(Decl);
       unsigned FwdDeclLine = 0;
-
-      llvm::DINodeArray Annotations = nullptr;
-      if (auto *PD = dyn_cast_or_null<ProtocolDecl>(Decl)) {
-        if (PD->isMarkerProtocol()) {
-          llvm::Metadata *Ops[2] = {
-              llvm::MDString::get(IGM.getLLVMContext(),
-                                  StringRef("swift.MarkerProtocol")),
-              llvm::ConstantAsMetadata::get(llvm::ConstantInt::get(
-                  llvm::Type::getInt1Ty(IGM.getLLVMContext()), true))};
-          SmallVector<llvm::Metadata *, 1> Annots = {
-              llvm::MDNode::get(IGM.getLLVMContext(), Ops)};
-          Annotations = DBuilder.getOrCreateArray(Annots);
-        }
-      }
-
       return createOpaqueStruct(Scope, Decl ? Decl->getNameStr() : MangledName,
                                 L.File, FwdDeclLine, SizeInBits, AlignInBits,
-                                Flags, MangledName, /*BoundParams=*/{},
-                                /*SpecificationOf=*/nullptr, Annotations);
+                                Flags, MangledName);
     }
 
     case TypeKind::UnboundGeneric: {

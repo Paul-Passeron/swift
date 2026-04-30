@@ -171,7 +171,6 @@ bool ActorIsolation::isEqual(const ActorIsolation &lhs,
 
   switch (lhs.getKind()) {
   case Nonisolated:
-  case NonisolatedConcurrent:
   case NonisolatedUnsafe:
   case Unspecified:
     return true;
@@ -183,7 +182,7 @@ bool ActorIsolation::isEqual(const ActorIsolation &lhs,
     // to answer.
     return false;
 
-  case NonisolatedNonsending:
+  case CallerIsolationInheriting:
     // This returns false for the same reason as erased. The caller has to check
     // against the actual caller isolation.
     return false;

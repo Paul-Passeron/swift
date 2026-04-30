@@ -78,10 +78,6 @@ public struct Reproducer: Sendable {
         signatures.add(Signature(symbols: [alias], assertion: nil))
       }
     }
-    var extraArgs = header.extraArgs ?? []
-    if let languageMode = header.languageMode {
-      extraArgs += ["-language-mode", "\(languageMode)"]
-    }
     return Self(
       signatures: signatures,
       options: .init(
@@ -92,9 +88,9 @@ public struct Reproducer: Sendable {
         withSolverLimits: header.solverLimits ?? false,
         noSDK: header.noSDK ?? false,
         noObjCInterop: header.noObjCInterop ?? false,
+        languageMode: header.languageMode,
         diagnosticStyle: header.diagnosticStyle,
-        frontendArgs: header.frontendArgs?.map { .value($0) } ?? [],
-        extraArgs: extraArgs.map { .value($0) }
+        frontendArgs: header.frontendArgs?.map { .value($0) } ?? []
       ),
       buffers: buffers,
       originalID: header.original,
@@ -152,13 +148,11 @@ public struct Reproducer: Sendable {
     if options.withSolverLimits {
       extraOpts.append(options.solverLimitArgs.joined(separator: " "))
     }
+    if let languageMode = options.languageMode {
+      extraOpts.append("-swift-version \(languageMode)")
+    }
     if let diagnosticStyle = options.diagnosticStyle {
       extraOpts.append("-diagnostic-style=\(diagnosticStyle)")
-    }
-    if options.kind != .complete {
-      extraOpts += options.extraArgs.flatMap(\.rawArgs)
-    } else {
-      extraOpts += options.getSwiftIDETestExtraArgs()
     }
     let extraOptsStr = (extraOpts.isEmpty ? "" : " ") + extraOpts.joined(separator: " ")
     let sourceOrderCompletion = options.useSourceOrderCompletion ? " -source-order-completion" : ""
@@ -206,7 +200,6 @@ public struct Reproducer: Sendable {
   func serialize() throws -> Data {
     let splits = self.splits
     let aliases = signatures.secondaries.sorted()
-    let extraArgs = options.extraArgs.flatMap(\.rawArgs)
     let header = Header(
       kind: options.kind,
       isDeterministic: options.isDeterministic ? nil : false,
@@ -220,13 +213,13 @@ public struct Reproducer: Sendable {
       solverLimits: options.withSolverLimits ? true : nil,
       noSDK: options.noSDK ? true : nil,
       noObjCInterop: options.noObjCInterop ? true : nil,
+      languageMode: options.languageMode,
       diagnosticStyle: options.diagnosticStyle,
       issueID: issueID,
       original: originalID,
       splits: splits.isEmpty ? nil : splits,
       frontendArgs: options.frontendArgs.isEmpty ? nil
-                      : options.frontendArgs.flatMap(\.rawArgs),
-      extraArgs: extraArgs.isEmpty ? nil : extraArgs
+                      : options.frontendArgs.flatMap(\.rawArgs)
     )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
@@ -274,11 +267,11 @@ extension Reproducer {
     var withSolverLimits: Bool = false
     var noSDK: Bool = false
     var noObjCInterop: Bool = false
+    var languageMode: Int?
     var isJoined: Bool = false
     var diagnosticStyle: String?
     var primaryIdx: Int?
     var frontendArgs: [Command.Argument] = []
-    var extraArgs: [Command.Argument] = []
 
     static var typecheck: Self { Self(kind: .typecheck) }
     static var emitSILGen: Self { Self(kind: .emitSILGen) }
@@ -309,13 +302,9 @@ extension Reproducer {
     var original: String?
     var splits: [Int]?
     var frontendArgs: [String]?
-    var extraArgs: [String]?
 
     var sig: Signature {
-      var symbols: [String] = []
-      if signature != signatureAssert?.fullMessage {
-        symbols.append(signature)
-      }
+      var symbols = [signature]
       if let signatureNext {
         symbols.append(signatureNext)
       }
@@ -326,12 +315,6 @@ extension Reproducer {
 }
 
 extension Reproducer.Options {
-  func withExtraArgs(_ extraArgs: [Command.Argument]) -> Self {
-    var result = self
-    result.extraArgs = extraArgs
-    return result
-  }
-
   func reorderInputs(_ inputs: [String]) -> [String] {
     var result: [String] = []
     if let primaryIdx {
@@ -362,19 +345,6 @@ extension Reproducer.Options {
     ]
   }
 
-  func getSwiftIDETestExtraArgs() -> [String] {
-    var args: [String] = []
-    // swift-ide-test currently only supports a limited set of frontend arguments
-    if extraArgs.contains(where: { $0.value == "-cxx-interoperability-mode=default" }) {
-      args += ["-cxx-interoperability-mode", "default"]
-    }
-    if let idx = extraArgs.firstIndex(where: { $0.value == "-language-mode" }),
-        idx + 1 < extraArgs.count  {
-      args += ["-swift-version"] + extraArgs[idx + 1].rawArgs
-    }
-    return args
-  }
-
   func getCommandInvocation(
     for inputs: [AbsolutePath], with toolchain: Toolchain
   ) -> Subprocess.Configuration {
@@ -396,16 +366,11 @@ extension Reproducer.Options {
     case .complete:
       args += [
         "--code-completion", "-batch-code-completion", "-skip-filecheck",
-        "-code-completion-diagnostics"
+        "-code-completion-diagnostics", "-source-filename"
       ]
-      args += getSwiftIDETestExtraArgs()
-      args.append("-source-filename")
     case .custom:
       args.append("-frontend")
       args += frontendArgs.flatMap(\.rawArgs)
-    }
-    if kind != .complete {
-      args += extraArgs.flatMap(\.rawArgs)
     }
     args += reorderInputs(inputs.map(\.rawPath))
     if useSourceOrderCompletion {
@@ -419,6 +384,9 @@ extension Reproducer.Options {
     }
     if noObjCInterop {
       args.append("-disable-objc-interop")
+    }
+    if let languageMode {
+      args += ["-swift-version", "\(languageMode)"]
     }
     if let diagnosticStyle {
       args.append("-diagnostic-style=\(diagnosticStyle)")
@@ -596,6 +564,9 @@ extension Reproducer.Options: CustomStringConvertible {
     }
     if withSolverLimits {
       components.append("solver-limits")
+    }
+    if let languageMode {
+      components.append("lang-mode=\(languageMode)")
     }
     if let primaryIdx {
       components.append("primary=\(primaryIdx)")

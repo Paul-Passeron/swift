@@ -34,10 +34,8 @@
 #include "swift/AST/ASTPrinter.h"
 #include "swift/AST/AccessScope.h"
 #include "swift/AST/ClangModuleLoader.h"
-#include "swift/AST/ConcreteDeclRef.h"
 #include "swift/AST/ConformanceLookup.h"
 #include "swift/AST/Decl.h"
-#include "swift/AST/DiagnosticsSema.h"
 #include "swift/AST/DistributedDecl.h"
 #include "swift/AST/Effects.h"
 #include "swift/AST/ExistentialLayout.h"
@@ -1508,16 +1506,13 @@ WitnessChecker::WitnessChecker(ASTContext &ctx, ProtocolDecl *proto,
     : Context(ctx), Proto(proto), Adoptee(adoptee), DC(dc) {}
 
 static void
-lookupValueWitnessesViaImplementsAttr(DeclContext *DC, ValueDecl *req,
-                                      SmallVector<ValueDecl *, 4> &witnesses,
-                                      bool ignoreMissingImports) {
+lookupValueWitnessesViaImplementsAttr(
+    DeclContext *DC, ValueDecl *req, SmallVector<ValueDecl *, 4> &witnesses) {
 
   auto name = req->createNameRef();
   auto *nominal = DC->getSelfNominalTypeDecl();
 
   NLOptions subOptions = (NL_ProtocolMembers | NL_IncludeAttributeImplements);
-  if (ignoreMissingImports)
-    subOptions |= NL_IgnoreMissingImports;
 
   nominal->synthesizeSemanticMembersIfNeeded(name.getFullName());
 
@@ -1562,8 +1557,7 @@ static bool contextMayExpandOperator(
 }
 
 SmallVector<ValueDecl *, 4>
-swift::lookupValueWitnesses(DeclContext *DC, ValueDecl *req,
-                            bool *ignoringNames, bool ignoreMissingImports) {
+swift::lookupValueWitnesses(DeclContext *DC, ValueDecl *req, bool *ignoringNames) {
   assert(!isa<AssociatedTypeDecl>(req) && "Not for lookup for type witnesses*");
   assert(req->isProtocolRequirement() || isa<AccessorDecl>(req));
 
@@ -1571,8 +1565,7 @@ swift::lookupValueWitnesses(DeclContext *DC, ValueDecl *req,
 
   // Do an initial check to see if there are any @_implements remappings
   // for this requirement.
-  lookupValueWitnessesViaImplementsAttr(DC, req, witnesses,
-                                        ignoreMissingImports);
+  lookupValueWitnessesViaImplementsAttr(DC, req, witnesses);
 
   auto reqName = req->createNameRef();
   auto reqBaseName = reqName.withoutArgumentLabels(DC->getASTContext());
@@ -1608,10 +1601,8 @@ swift::lookupValueWitnesses(DeclContext *DC, ValueDecl *req,
     // extensions, including those that match only by base name. Take care not
     // to restate them in the resulting list, or else an otherwise valid
     // conformance will become ambiguous.
-    NLOptions options = doUnqualifiedLookup ? NLOptions(0) : NL_ProtocolMembers;
-
-    if (ignoreMissingImports)
-      options |= NL_IgnoreMissingImports;
+    const NLOptions options =
+        doUnqualifiedLookup ? NLOptions(0) : NL_ProtocolMembers;
 
     SmallVector<ValueDecl *, 4> lookupResults;
     bool addedAny = false;
@@ -1671,15 +1662,9 @@ bool WitnessChecker::findBestWitness(
                                bool &doNotDiagnoseMatches) {
   enum Attempt {
     Regular,
-    IgnoreMissingImports,
     OperatorsFromOverlay,
     Done
   };
-
-  const bool ignoreMissingImportsDuringRegularLookup =
-      DC->getAsDecl()->isImplicit() ||
-      !Context.LangOpts.hasFeature(Feature::MemberImportVisibility,
-                                   /*allowMigration=*/true);
 
   bool anyFromUnconstrainedExtension;
   numViable = 0;
@@ -1688,24 +1673,7 @@ bool WitnessChecker::findBestWitness(
     SmallVector<ValueDecl *, 4> witnesses;
     switch (attempt) {
     case Regular:
-      witnesses = lookupValueWitnesses(DC, requirement, ignoringNames,
-                                       ignoreMissingImportsDuringRegularLookup);
-      break;
-    case IgnoreMissingImports:
-      if (ignoreMissingImportsDuringRegularLookup)
-        continue;
-
-      // Conformance checking in swiftinterfaces is lenient and can recover
-      // from missing witnesses by assuming that the protocol witness table
-      // will have an entry for the requirement at runtime. As a result,
-      // diagnosing missing imports for witnesses here could break source
-      // compatibility for existing interface files and must be skipped.
-      if (DC->isInSwiftinterface())
-        continue;
-
-      // Try again, this time ignoring missing imports to find more candidates.
-      witnesses = lookupValueWitnesses(DC, requirement, ignoringNames,
-                                       /*ignoreMissingImports=*/true);
+      witnesses = lookupValueWitnesses(DC, requirement, ignoringNames);
       break;
     case OperatorsFromOverlay: {
       // If we have a Clang declaration, the matching operator might be in the
@@ -2056,11 +2024,6 @@ RequirementCheck WitnessChecker::checkWitness(ValueDecl *requirement,
       return RequirementCheck(CheckKind::DefaultWitnessDeprecated);
     }
   }
-
-  // Check whether the witness has been imported appropriately.
-  if (requirement != match.Witness &&
-      shouldDiagnoseMissingImportForMember(match.Witness, DC))
-    return CheckKind::RequiresMissingImport;
 
   return CheckKind::Success;
 }
@@ -3688,15 +3651,8 @@ ConformanceChecker::checkActorIsolation(ValueDecl *requirement,
 
       // If this requirement is a function, check that its parameters are Sendable as well
       if (isa<AbstractFunctionDecl>(requirement)) {
-        // Create substitutions based on the conformance that are in the
-        // requirements generic environment, so that protocol generic parameters
-        // and associated types within the conformance can both resolve.
-        auto reqGenEnv = requirement->getInnermostDeclContext()
-                             ->getGenericEnvironmentOfContext();
-        auto reqSubs = Conformance->getType()->getMemberSubstitutionMap(
-            requirement, reqGenEnv);
         diagnoseNonSendableTypesInReference(
-            /*base=*/nullptr, ConcreteDeclRef(requirement, reqSubs),
+            /*base=*/nullptr, getDeclRefInContext(requirement),
             requirement->getInnermostDeclContext(), requirement->getLoc(),
             SendableCheckReason::Conformance, getActorIsolation(witness),
             FunctionCheckKind::Params, loc);
@@ -4766,21 +4722,6 @@ ConformanceChecker::resolveWitnessViaLookup(ValueDecl *requirement) {
                            requirement);
           });
         break;
-
-      case CheckKind::RequiresMissingImport: {
-        // In migrate mode the conformance is still valid (it's just a warning
-        // to add the import), so don't mark it as an error.
-        bool isError = !Context.LangOpts.isMigratingToFeature(
-            Feature::MemberImportVisibility);
-        getASTContext().addDelayedConformanceDiag(
-            Conformance, isError,
-            [witness](NormalProtocolConformance *conformance) {
-              maybeDiagnoseMissingImportForConformanceWitness(
-                  witness, conformance->getProtocol(),
-                  conformance->getDeclContext(), conformance->getLoc());
-            });
-        break;
-      }
     }
 
     if (auto *classDecl = DC->getSelfClassDecl()) {
@@ -7007,7 +6948,7 @@ void TypeChecker::checkConformancesInContext(IterableDeclContext *idc) {
         continue;
 
       // Only nonisolated conformances can be affected.
-      if (!conformance->getIsolation().isNonisolatedOrConcurrent())
+      if (!conformance->getIsolation().isNonisolated())
         continue;
 
       auto nameLoc = normal->getProtocolNameLoc();
@@ -7066,35 +7007,27 @@ void TypeChecker::checkConformancesInContext(IterableDeclContext *idc) {
       SmallVector<ProtocolConformance *, 2> conformances;
       nominal->lookupConformance(diag.Protocol, conformances);
       for (auto conformance : conformances) {
-        if (isa<InheritedProtocolConformance>(conformance)) {
+        if (isa<InheritedProtocolConformance>(conformance))
           SendableConformance = conformance;
-          break;
-        }
       }
     }
-
-    // If the existing conformance was marked unavailable and should be
-    // described as unavailable in diagnostics.
-    bool existingDeclUnavailableConformance = false;
 
     if ((existingModule != dc->getParentModule() && conformanceInOrigModule) ||
         diag.Protocol->isMarkerProtocol()) {
       // Warn about the conformance.
-      if (isSendable && SendableConformance) {
-        auto *rootConf = SendableConformance->getRootConformance();
-        auto *decl = rootConf->getDeclContext()->getAsDecl();
-
-        // Allow redundant Sendable conformances when neither the existing
-        // declaration nor the root conformance is unavailable.
-        if (!(existingDecl->isUnavailable() || decl->isUnavailable()))
+      if (isSendable && SendableConformance &&
+          isa<InheritedProtocolConformance>(SendableConformance)) {
+        // Allow re-stated unchecked conformances to Sendable in subclasses
+        // as long as the inherited conformance isn't unavailable.
+        auto *conformance = SendableConformance->getRootConformance();
+        auto *decl = conformance->getDeclContext()->getAsDecl();
+        if (!decl->isUnavailable()) {
           continue;
+        }
 
-        existingDeclUnavailableConformance = true;
-        Context.Diags.diagnose(diag.Loc, diag::unavailable_sendable_conformance,
+        Context.Diags.diagnose(diag.Loc, diag::unavailable_conformance,
                                nominal->getDeclaredInterfaceType(),
-                               diag.ExistingKind ==
-                                   ConformanceEntryKind::Inherited,
-                               existingModule->getName());
+                               diag.Protocol->getName());
       } else if (existingModule == dc->getParentModule()) {
         Context.Diags.diagnose(diag.Loc, diag::redundant_conformance,
                                nominal->getDeclaredInterfaceType(),
@@ -7169,17 +7102,12 @@ void TypeChecker::checkConformancesInContext(IterableDeclContext *idc) {
         }
       }
     }
-    existingDecl->diagnose(
-        existingDeclUnavailableConformance
-            ? diag::declared_protocol_unavailable_conformance_here
-            : diag::declared_protocol_conformance_here,
-        dc->getDeclaredInterfaceType(),
-        static_cast<unsigned>(diag.ExistingKind), diag.Protocol->getName(),
-        diag.ExistingExplicitProtocol->getName());
 
-    // TODO: For ExistingKind == Inherited, walk the class hierarchy and show
-    // an appropriate amount of notes. We probably don't want to show a note for
-    // every single ancestor for long hierarchies...
+    existingDecl->diagnose(diag::declared_protocol_conformance_here,
+                           dc->getDeclaredInterfaceType(),
+                           static_cast<unsigned>(diag.ExistingKind),
+                           diag.Protocol->getName(),
+                           diag.ExistingExplicitProtocol->getName());
   }
 
   if (groupChecker.getConformances().empty()) {

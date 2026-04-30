@@ -31,7 +31,7 @@
 // REQUIRES: swift_feature_ImportCxxMembersLazily
 
 // Requires specifying the Android API when compiling
-// XFAIL: OS=linux-android, OS=linux-androideabi
+// UNSUPPORTED: OS=linux-android, OS=linux-androideabi
 
 //--- Inputs/module.modulemap
 module StdContain {

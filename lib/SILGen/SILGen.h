@@ -59,7 +59,7 @@ public:
   /// Mapping from SILDeclRefs to emitted SILFunctions.
   llvm::DenseMap<SILDeclRef, SILFunction*> emittedFunctions;
   /// Mapping from ProtocolConformances to emitted SILWitnessTables.
-  llvm::DenseMap<RootProtocolConformance*, SILWitnessTable*> emittedWitnessTables;
+  llvm::DenseMap<NormalProtocolConformance*, SILWitnessTable*> emittedWitnessTables;
 
   /// Mapping from SILDeclRefs to where the given function will be inserted
   /// when it's emitted. Used for non-externally visible symbols.
@@ -81,10 +81,10 @@ public:
   llvm::DenseSet<TypeBase *> usedConformancesFromObjectiveCTypes;
 
   /// Queue of delayed conformances that need to be emitted.
-  std::deque<RootProtocolConformance *> pendingConformances;
+  std::deque<NormalProtocolConformance *> pendingConformances;
 
   /// Set of delayed conformances that have already been forced.
-  llvm::DenseSet<RootProtocolConformance *> forcedConformances;
+  llvm::DenseSet<NormalProtocolConformance *> forcedConformances;
 
   /// Imported noncopyable types that we have seen.
   llvm::DenseSet<NominalTypeDecl *> importedNontrivialNoncopyableTypes;
@@ -389,7 +389,7 @@ public:
   void emitObjCDestructorThunk(DestructorDecl *destructor);
 
   /// Get or emit the witness table for a protocol conformance.
-  SILWitnessTable *getWitnessTable(RootProtocolConformance *conformance);
+  SILWitnessTable *getWitnessTable(NormalProtocolConformance *conformance);
 
   /// Emit a protocol witness entry point.
   SILFunction *
@@ -406,7 +406,7 @@ public:
   SILFunction *emitDefaultOverride(SILDeclRef replacement, SILDeclRef original);
 
   /// Emit the self-conformance witness table for a protocol.
-  SILWitnessTable *emitSelfConformanceWitnessTable(ProtocolDecl *protocol);
+  void emitSelfConformanceWitnessTable(ProtocolDecl *protocol);
 
   /// Emit the lazy initializer function for a global pattern binding
   /// declaration.

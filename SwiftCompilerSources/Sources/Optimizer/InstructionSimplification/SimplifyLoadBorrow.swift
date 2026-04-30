@@ -12,7 +12,7 @@
 
 import SIL
 
-extension LoadBorrowInst : OnoneSimplifiable, SILCombineSimplifiable {
+extension LoadBorrowInst : Simplifiable, SILCombineSimplifiable {
   func simplify(_ context: SimplifyContext) {
     if uses.ignoreDebugUses.ignore(usersOfType: EndBorrowInst.self).isEmpty {
       context.erase(instructionIncludingAllUsers: self)

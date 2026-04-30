@@ -18,5 +18,3 @@ var _ = nonNilCopyable.pointee // expected-warning {{'pointee' is deprecated: us
 let nonNilOptNonCopyable = getNonNilOptionalHasDeletedCopyCtor()
 takeCopyable(nonNilOptNonCopyable) // expected-error {{conform to 'Copyable'}}
 var _ = nonNilOptNonCopyable.pointee
-
-let _ = returnsConvertsToTemplated() // shouldn't crash the compiler

@@ -6254,7 +6254,7 @@ ManagedValue SILGenFunction::getThunkedAutoDiffLinearMap(
   auto loc = F.getLocation();
   SILGenFunctionBuilder fb(SGM);
   auto *thunk = fb.getOrCreateSharedFunction(
-    loc, name, thunkDeclType, F.getActorIsolation(), IsBare, IsTransparent, IsSerialized,
+      loc, name, thunkDeclType, IsBare, IsTransparent, IsSerialized,
       ProfileCounter(), IsReabstractionThunk, IsNotDynamic, IsNotDistributed,
       IsNotRuntimeAccessible);
 
@@ -6612,13 +6612,13 @@ SILFunction *SILGenModule::getOrCreateCustomDerivativeThunk(
   // linkage of derivative thunks so we can serialize them (the original
   // function itself might be HiddenExternal in this case if we only have
   // declaration without definition).
-  auto linkage = originalFn->isAlwaysEmitIntoClient()
+  auto linkage = originalFn->markedAsAlwaysEmitIntoClient()
                      ? SILLinkage::PublicNonABI
                      : stripExternalFromLinkage(originalFn->getLinkage());
 
   auto *thunk = fb.getOrCreateFunction(
-      loc, name, linkage, thunkFnTy, customDerivativeFn->getActorIsolation(),
-      IsBare, IsNotTransparent, customDerivativeFn->getSerializedKind(),
+      loc, name, linkage, thunkFnTy, IsBare, IsNotTransparent,
+      customDerivativeFn->getSerializedKind(),
       customDerivativeFn->isDynamicallyReplaceable(),
       customDerivativeFn->isDistributed(),
       customDerivativeFn->isRuntimeAccessible(),
@@ -7169,7 +7169,6 @@ SILGenFunction::emitVTableThunk(SILDeclRef base,
       switch (baseIsolation) {
       case ActorIsolation::Unspecified:
       case ActorIsolation::Nonisolated:
-      case ActorIsolation::NonisolatedConcurrent:
       case ActorIsolation::NonisolatedUnsafe:
         return emitNonIsolatedIsolation(loc).getValue();
       case ActorIsolation::Erased:
@@ -7180,12 +7179,11 @@ SILGenFunction::emitVTableThunk(SILDeclRef base,
         return emitGlobalActorIsolation(loc, globalActor).getValue();
       }
       case ActorIsolation::ActorInstance:
-      case ActorIsolation::NonisolatedNonsending: {
+      case ActorIsolation::CallerIsolationInheriting: {
         auto derivedIsolation = getDerivedIsolation();
         switch (derivedIsolation) {
         case ActorIsolation::Unspecified:
         case ActorIsolation::Nonisolated:
-        case ActorIsolation::NonisolatedConcurrent:
         case ActorIsolation::NonisolatedUnsafe:
           return emitNonIsolatedIsolation(loc).getValue();
         case ActorIsolation::Erased:
@@ -7197,7 +7195,7 @@ SILGenFunction::emitVTableThunk(SILDeclRef base,
           return emitGlobalActorIsolation(loc, globalActor).getValue();
         }
         case ActorIsolation::ActorInstance:
-        case ActorIsolation::NonisolatedNonsending: {
+        case ActorIsolation::CallerIsolationInheriting: {
           auto isolatedArg = F.maybeGetIsolatedArgument();
           assert(isolatedArg);
           return isolatedArg;
@@ -7212,8 +7210,8 @@ SILGenFunction::emitVTableThunk(SILDeclRef base,
     // If our derived isolation is caller isolation inheriting and our base
     // isn't, we need to insert a hop so that derived can assume that it does
     // not have to hop in its prologue.
-    if (!baseIsolation.isNonisolatedNonsending() &&
-        getDerivedIsolation().isNonisolatedNonsending()) {
+    if (!baseIsolation.isCallerIsolationInheriting() &&
+        getDerivedIsolation().isCallerIsolationInheriting()) {
       B.createHopToExecutor(loc, args.back(), false /*mandatory*/);
     }
   }
@@ -7681,7 +7679,6 @@ void SILGenFunction::emitProtocolWitness(
       switch (reqtIsolation) {
       case ActorIsolation::Unspecified:
       case ActorIsolation::Nonisolated:
-      case ActorIsolation::NonisolatedConcurrent:
       case ActorIsolation::NonisolatedUnsafe:
         return emitNonIsolatedIsolation(loc).getValue();
       case ActorIsolation::Erased:
@@ -7692,12 +7689,11 @@ void SILGenFunction::emitProtocolWitness(
         return emitGlobalActorIsolation(loc, globalActor).getValue();
       }
       case ActorIsolation::ActorInstance:
-      case ActorIsolation::NonisolatedNonsending: {
+      case ActorIsolation::CallerIsolationInheriting: {
         auto witnessIsolation = getWitnessIsolation();
         switch (witnessIsolation) {
         case ActorIsolation::Unspecified:
         case ActorIsolation::Nonisolated:
-        case ActorIsolation::NonisolatedConcurrent:
         case ActorIsolation::NonisolatedUnsafe:
           return emitNonIsolatedIsolation(loc).getValue();
         case ActorIsolation::Erased:
@@ -7709,7 +7705,7 @@ void SILGenFunction::emitProtocolWitness(
           return emitGlobalActorIsolation(loc, globalActor).getValue();
         }
         case ActorIsolation::ActorInstance:
-        case ActorIsolation::NonisolatedNonsending: {
+        case ActorIsolation::CallerIsolationInheriting: {
           auto isolatedArg = F.maybeGetIsolatedArgument();
           assert(isolatedArg);
           return isolatedArg;
@@ -7725,8 +7721,8 @@ void SILGenFunction::emitProtocolWitness(
     // isolation is caller isolation inheriting, hop onto the reqtIsolation so
     // that it is safe for our witness to assume that it is already on its
     // actor.
-    if (!reqtIsolation.isNonisolatedNonsending() &&
-        getWitnessIsolation().isNonisolatedNonsending()) {
+    if (!reqtIsolation.isCallerIsolationInheriting() &&
+        getWitnessIsolation().isCallerIsolationInheriting()) {
       B.createHopToExecutor(loc, args.back(), false /*mandatory*/);
     }
   }

@@ -1873,15 +1873,13 @@ std::optional<SILValue>
 BoundsCheckOpts::cloneFixedStorageIndex(SILValue indexValue,
                                         SILInstruction *insertPos,
                                         InstructionIndices &instIndices) {
-  SmallVector<SILInstruction *, 8> worklist;
+  SmallVector<SILInstruction *, 8> toClone;
   llvm::DenseMap<ValueBase *, SILValue> valueMap;
-  ValueSet visited(getFunction());
 
+  ValueWorklist worklist(getFunction());
+  worklist.push(indexValue);
 
-  std::function<bool(SILValue)> collectOperands = [&](SILValue value) -> bool {
-    if (!visited.insert(value)) {
-      return true;
-    }
+  while (auto value = worklist.pop()) {
     auto *inst = value->getDefiningInstruction();
 
     // In ossa, bailout when we have an instruction with lifetime ending
@@ -1889,7 +1887,7 @@ BoundsCheckOpts::cloneFixedStorageIndex(SILValue indexValue,
     if (inst && getFunction()->hasOwnership()) {
       for (auto &operand : inst->getAllOperands()) {
         if (operand.isLifetimeEnding()) {
-          return false;
+          return std::nullopt;
         }
       }
     }
@@ -1902,28 +1900,24 @@ BoundsCheckOpts::cloneFixedStorageIndex(SILValue indexValue,
         inst->getParent() != insertPos->getParent() ||
         instIndices.get(inst) < instIndices.get(insertPos)) {
       mapValue(value, value, valueMap);
-      return true;
+      continue;
     }
 
     if (!inst->isTriviallyDuplicatable() || inst->mayHaveSideEffects()) {
-      return false;
+      return std::nullopt;
     }
+
+    toClone.push_back(inst);
 
     for (auto operand : inst->getOperandValues()) {
-      if (!collectOperands(operand)) {
-        return false;
-      }
+      worklist.pushIfNotVisited(operand);
     }
-
-    worklist.push_back(inst);
-    return true;
-  };
-
-  if (!collectOperands(indexValue)) {
-    return std::nullopt;
   }
 
-  for (auto *inst : worklist) {
+  // Reverse the list to get topological order
+  std::reverse(toClone.begin(), toClone.end());
+
+  for (auto *inst : toClone) {
     auto *cloned = inst->clone(insertPos);
     mapOperands(cloned, valueMap);
     mapResults(cloned, inst, valueMap);

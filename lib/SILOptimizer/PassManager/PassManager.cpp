@@ -24,7 +24,6 @@
 #include "swift/SIL/SILFunction.h"
 #include "swift/SIL/SILModule.h"
 #include "swift/SILOptimizer/Analysis/BasicCalleeAnalysis.h"
-#include "swift/SILOptimizer/Analysis/DominanceAnalysis.h"
 #include "swift/SILOptimizer/Analysis/FunctionOrder.h"
 #include "swift/SILOptimizer/PassManager/PrettyStackTrace.h"
 #include "swift/SILOptimizer/PassManager/Transforms.h"
@@ -34,11 +33,11 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringSwitch.h"
-#include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/GraphWriter.h"
 #include "llvm/Support/ManagedStatic.h"
+#include "llvm/Support/Casting.h"
 #include <fstream>
 
 #ifndef SWIFT_ENABLE_SWIFT_IN_SWIFT
@@ -685,8 +684,7 @@ void SILPassManager::runPassOnFunction(unsigned TransIdx, SILFunction *F) {
       (SILVerifyAroundPass.end() != std::find_if(SILVerifyAroundPass.begin(),
                                                  SILVerifyAroundPass.end(),
                                                  MatchFun))) {
-    F->verify(getAnalysis<BasicCalleeAnalysis>()->getCalleeCache(),
-              getAnalysis<DominanceAnalysis>()->get(F));
+    F->verify(getAnalysis<BasicCalleeAnalysis>()->getCalleeCache());
     verifyAnalyses();
     runSwiftFunctionVerification(F);
   }
@@ -796,8 +794,7 @@ void SILPassManager::runPassOnFunction(unsigned TransIdx, SILFunction *F) {
 
   if (getOptions().VerifyAll &&
       (CurrentPassHasInvalidated || SILVerifyWithoutInvalidation)) {
-    F->verify(getAnalysis<BasicCalleeAnalysis>()->getCalleeCache(),
-              getAnalysis<DominanceAnalysis>()->get(F));
+    F->verify(getAnalysis<BasicCalleeAnalysis>()->getCalleeCache());
     verifyAnalyses(F);
     runSwiftFunctionVerification(F);
   } else if (getOptions().VerifyOwnershipAll &&
@@ -810,8 +807,7 @@ void SILPassManager::runPassOnFunction(unsigned TransIdx, SILFunction *F) {
         (SILVerifyAroundPass.end() != std::find_if(SILVerifyAroundPass.begin(),
                                                    SILVerifyAroundPass.end(),
                                                    MatchFun))) {
-      F->verify(getAnalysis<BasicCalleeAnalysis>()->getCalleeCache(),
-                getAnalysis<DominanceAnalysis>()->get(F));
+      F->verify(getAnalysis<BasicCalleeAnalysis>()->getCalleeCache());
       verifyAnalyses();
       runSwiftFunctionVerification(F);
     }
@@ -1172,8 +1168,7 @@ void SILPassManager::addFunctionToWorklist(SILFunction *F,
     // this function to the pass manager to ensure that we perform this
     // verification.
     if (getOptions().VerifyAll) {
-      F->verify(getAnalysis<BasicCalleeAnalysis>()->getCalleeCache(),
-                getAnalysis<DominanceAnalysis>()->get(F));
+      F->verify(getAnalysis<BasicCalleeAnalysis>()->getCalleeCache());
     }
 
     NewLevel = DerivationLevels[DerivedFrom] + 1;
@@ -1584,7 +1579,7 @@ createEmptyFunction(StringRef name,
   SILOptFunctionBuilder functionBuilder(*getTransform());
 
   SILFunction *newF = functionBuilder.createFunction(
-      fromFn->getLinkage(), name, newTy, fromFn->getActorIsolation(), nullptr,
+      fromFn->getLinkage(), name, newTy, nullptr,
       fromFn->getLocation(), fromFn->isBare(), fromFn->isTransparent(),
       fromFn->getSerializedKind(), IsNotDynamic, IsNotDistributed,
       IsNotRuntimeAccessible, fromFn->getEntryCount(), fromFn->isThunk(),

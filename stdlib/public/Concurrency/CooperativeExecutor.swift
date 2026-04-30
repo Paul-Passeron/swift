@@ -27,7 +27,7 @@ extension ExecutorJob {
   fileprivate var cooperativeExecutorTimestampPointer: UnsafeMutablePointer<CooperativeExecutor.Timestamp> {
     get {
       assert(cooperativeExecutorTimestampIsIndirect)
-      return withUnsafeExecutorPrivateData {
+      return unsafe withUnsafeExecutorPrivateData {
         unsafe $0.withMemoryRebound(to: UnsafeMutablePointer<CooperativeExecutor.Timestamp>.self) {
           return unsafe $0[0]
         }
@@ -35,7 +35,7 @@ extension ExecutorJob {
     }
     set {
       assert(cooperativeExecutorTimestampIsIndirect)
-      withUnsafeExecutorPrivateData {
+      unsafe withUnsafeExecutorPrivateData {
         unsafe $0.withMemoryRebound(to: UnsafeMutablePointer<CooperativeExecutor.Timestamp>.self) {
           unsafe $0[0] = newValue
         }
@@ -49,7 +49,7 @@ extension ExecutorJob {
         let ptr = unsafe cooperativeExecutorTimestampPointer
         return unsafe ptr.pointee
       } else {
-        return withUnsafeExecutorPrivateData {
+        return unsafe withUnsafeExecutorPrivateData {
           return unsafe $0.assumingMemoryBound(
             to: CooperativeExecutor.Timestamp.self
           )[0]
@@ -61,7 +61,7 @@ extension ExecutorJob {
         let ptr = unsafe cooperativeExecutorTimestampPointer
         unsafe ptr.pointee = newValue
      } else {
-        withUnsafeExecutorPrivateData {
+        unsafe withUnsafeExecutorPrivateData {
           unsafe $0.withMemoryRebound(to: CooperativeExecutor.Timestamp.self) {
             unsafe $0[0] = newValue
           }
@@ -247,6 +247,10 @@ final class CooperativeExecutor: Executor, @unchecked Sendable {
 @available(StdlibDeploymentTarget 6.3, *)
 extension CooperativeExecutor: SchedulingExecutor {
 
+  public var asScheduling: (any SchedulingExecutor)? {
+    return self
+  }
+
   func currentTime(clock: _ClockID) -> Timestamp {
     var now: Timestamp = .zero
     unsafe _getTime(seconds: &now.seconds,
@@ -269,7 +273,8 @@ extension CooperativeExecutor: SchedulingExecutor {
       let duration = Duration(from: suspendingDuration)
       suspendingWaitQueue.enqueue(job, after: duration)
     } else {
-      fatalError("Sorry, cannot schedule on an unknown clock")
+      clock.enqueue(job, on: self, at: clock.now.advanced(by: delay),
+                    tolerance: tolerance)
       return
     }
   }

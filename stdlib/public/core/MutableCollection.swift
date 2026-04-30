@@ -234,7 +234,6 @@ where SubSequence: MutableCollection
   /// - Returns: The value returned from `body`, unless the collection doesn't
   ///   support contiguous storage, in which case the method ignores `body` and
   ///   returns `nil`.
-  @safe
   mutating func withContiguousMutableStorageIfAvailable<R>(
     _ body: (_ buffer: inout UnsafeMutableBufferPointer<Element>) throws -> R
   ) rethrows -> R?
@@ -251,7 +250,6 @@ extension MutableCollection {
   }
 
   @inlinable
-  @safe
   public mutating func withContiguousMutableStorageIfAvailable<R>(
     _ body: (inout UnsafeMutableBufferPointer<Element>) throws -> R
   ) rethrows -> R? {

@@ -144,26 +144,8 @@ public class Instruction : CustomStringConvertible, Hashable {
     return bridged.mayHaveSideEffects()
   }
 
-  public final var mayAccessPointerOrGlobal: Bool {
-    guard mayReadOrWriteMemory else {
-      return false
-    }
-    switch self {
-    case is BuiltinInst:
-      // Consider all builtins that read/write memory to access pointers.
-      return true
-    case let endBorrow as EndBorrowInst:
-      switch endBorrow.borrow {
-      case let loadBorrow as LoadBorrowInst:
-        return FindPointerOrGlobalWalker.mayAccessPointerOrGlobal(loadBorrow.address)
-      default:
-        return false
-      }
-    default:
-      return operands.contains { op in
-        FindPointerOrGlobalWalker.mayAccessPointerOrGlobal(op.value)
-      }
-    }
+  public final var mayAccessPointer: Bool {
+    return bridged.mayAccessPointer()
   }
 
   /// True if arbitrary functions may be called by this instruction.
@@ -179,13 +161,8 @@ public class Instruction : CustomStringConvertible, Hashable {
     return bridged.maySynchronize()
   }
 
-  public final var isDeinitBarrier: Bool {
-    switch self {
-    case is FullApplySite, is EndApplyInst, is AbortApplyInst:
-      return true
-    default:
-      return mayAccessPointerOrGlobal || mayLoadWeakOrUnowned || maySynchronize
-    }
+  public final var mayBeDeinitBarrierNotConsideringSideEffects: Bool {
+    return bridged.mayBeDeinitBarrierNotConsideringSideEffects()
   }
 
   public final var isEndOfScopeMarker: Bool {
@@ -226,30 +203,6 @@ public class Instruction : CustomStringConvertible, Hashable {
 
   public var bridged: BridgedInstruction {
     BridgedInstruction(SwiftObject(self))
-  }
-}
-
-/// Returns `abortWalk` if the address stems from a raw pointer or a global variable.
-/// We cannot simply use `AccessPath` for this because `AccessPath` looks through
-/// `address_to_pointer` - `pointer_to_address` pairs.
-private struct FindPointerOrGlobalWalker : AddressUseDefWalker {
-
-  static func mayAccessPointerOrGlobal(_ value: Value) -> Bool {
-    guard value.type.isAddress else {
-      return false
-    }
-    var walker = FindPointerOrGlobalWalker()
-    return walker.walkUp(address: value, path: UnusedWalkingPath()) == .abortWalk
-  }
-
-  func rootDef(address: Value, path: UnusedWalkingPath) -> WalkResult {
-    let accessBase = AccessBase(baseAddress: address)
-    switch accessBase {
-    case .box, .stack, .class, .tail, .argument, .yield, .storeBorrow, .index:
-      return .continueWalk
-    case .global, .pointer, .unidentified:
-      return .abortWalk
-    }
   }
 }
 
@@ -950,14 +903,8 @@ final public class IndexRawPointerInst : SingleValueInstruction, IndexingInstruc
 final public
 class TailAddrInst : SingleValueInstruction, IndexingInstruction {}
 
-/// An instruction that initializes an existential
-@_semantics("fast_cast")
-public protocol InitExistentialInstruction: Instruction {
-  var conformances: ConformanceArray { get }
-}
-
 final public
-class InitExistentialRefInst : SingleValueInstruction, UnaryInstruction, InitExistentialInstruction {
+class InitExistentialRefInst : SingleValueInstruction, UnaryInstruction {
   public var instance: Value { operand.value }
 
   public var conformances: ConformanceArray {
@@ -975,17 +922,13 @@ class OpenExistentialRefInst : SingleValueInstruction, UnaryInstruction {
 }
 
 final public
-class InitExistentialValueInst : SingleValueInstruction, UnaryInstruction, InitExistentialInstruction {
-  public var conformances: ConformanceArray {
-    ConformanceArray(bridged: bridged.InitExistentialValueInst_getConformances())
-  }
-}
+class InitExistentialValueInst : SingleValueInstruction, UnaryInstruction {}
 
 final public
 class OpenExistentialValueInst : SingleValueInstruction, UnaryInstruction {}
 
 final public
-class InitExistentialAddrInst : SingleValueInstruction, UnaryInstruction, InitExistentialInstruction {
+class InitExistentialAddrInst : SingleValueInstruction, UnaryInstruction {
   public var conformances: ConformanceArray {
     ConformanceArray(bridged: bridged.InitExistentialAddrInst_getConformances())
   }
@@ -1013,12 +956,8 @@ final public
 class OpenExistentialBoxValueInst : SingleValueInstruction, UnaryInstruction {}
 
 final public
-class InitExistentialMetatypeInst : SingleValueInstruction, UnaryInstruction, InitExistentialInstruction {
+class InitExistentialMetatypeInst : SingleValueInstruction, UnaryInstruction {
   public var metatype: Value { operand.value }
-
-  public var conformances: ConformanceArray {
-    ConformanceArray(bridged: bridged.InitExistentialMetatypeInst_getConformances())
-  }
 }
 
 final public
@@ -1197,22 +1136,20 @@ final public class InitEnumDataAddrInst : SingleValueInstruction, UnaryInstructi
   public var caseIndex: Int { bridged.InitEnumDataAddrInst_caseIndex() }
 }
 
-public class UncheckedEnumDataAddrInstBase : SingleValueInstruction, EnumInstruction {
-  public var `enum`: Value { fatalError("implemented in subclasses") }
-  public final var caseIndex: Int { bridged.UncheckedEnumDataAddrInstBase_caseIndex() }
-}
+final public class UncheckedTakeEnumDataAddrInst : SingleValueInstruction, UnaryInstruction, EnumInstruction {
+  public var `enum`: Value { operand.value }
+  public var caseIndex: Int { bridged.UncheckedTakeEnumDataAddrInst_caseIndex() }
 
-final public class UncheckedTakeEnumDataAddrInst : UncheckedEnumDataAddrInstBase, UnaryInstruction {
-  public override var `enum`: Value { operand.value }
-}
+  /// True, if this instruction invalidates the operand memory value.
+  /// This happens for certain enum kinds because the enum tag must be cleared before the payload may be used.
+  public var isDestructive: Bool { bridged.UncheckedTakeEnumDataAddrInst_isDestructive() }
 
-final public class UncheckedInPlaceEnumDataAddrInst : UncheckedEnumDataAddrInstBase, UnaryInstruction {
-  public override var `enum`: Value { operand.value }
-}
-
-final public class UncheckedBorrowEnumDataAddrInst : UncheckedEnumDataAddrInstBase {
-  public override var `enum`: Value { operands[0].value }
-  public var scratch: Value { operands[1].value }
+  /// True, if this instruction may invalidate the operand memory value.
+  public var mayBeDestructive: Bool {
+    return isDestructive ||
+           // We don't know the layout of resilient enums. So be conservative and assume they are destructive.
+           self.enum.type.nominal!.isResilient(in: parentFunction)
+  }
 }
 
 final public class SelectEnumInst : SingleValueInstruction {

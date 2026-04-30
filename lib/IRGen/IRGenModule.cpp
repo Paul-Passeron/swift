@@ -1017,16 +1017,6 @@ namespace RuntimeConstants {
     return RuntimeAvailability::AlwaysAvailable;
   }
 
-  RuntimeAvailability
-  TaskPriorityEscalationHandlersAvailability(ASTContext &Context) {
-    auto featureAvailability =
-        Context.getTaskPriorityEscalationHandlersAvailability();
-    if (!isDeploymentAvailabilityContainedIn(Context, featureAvailability)) {
-      return RuntimeAvailability::ConditionallyAvailable;
-    }
-    return RuntimeAvailability::AlwaysAvailable;
-  }
-
   RuntimeAvailability CoroutineAccessorsAvailability(ASTContext &Context) {
     auto featureAvailability = Context.getCoroutineAccessorsAvailability();
     if (!isDeploymentAvailabilityContainedIn(Context, featureAvailability)) {
@@ -1467,6 +1457,13 @@ bool IRGenerator::canEmitWitnessTableLazily(SILWitnessTable *wt) {
 }
 
 void IRGenerator::addLazyWitnessTable(const ProtocolConformance *Conf) {
+  // In Embedded Swift, only class-bound wtables are allowed.
+  auto &langOpts = SIL.getASTContext().LangOpts;
+  if (langOpts.hasFeature(Feature::Embedded) &&
+      !langOpts.hasFeature(Feature::EmbeddedExistentials)) {
+    assert(Conf->getProtocol()->requiresClass());
+  }
+
   if (auto *wt = SIL.lookUpWitnessTable(Conf)) {
     // Add it to the queue if it hasn't already been put there.
     if (canEmitWitnessTableLazily(wt) &&
@@ -2441,5 +2438,7 @@ bool swift::writeEmptyOutputFilesFor(
 }
 
 bool IRGenModule::isEmbeddedWithExistentials() const {
-  return Context.LangOpts.hasFeature(Feature::Embedded);
+  auto &langOpts = Context.LangOpts;
+  return langOpts.hasFeature(Feature::Embedded) &&
+    langOpts.hasFeature(Feature::EmbeddedExistentials);
 }

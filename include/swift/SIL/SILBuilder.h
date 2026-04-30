@@ -448,15 +448,12 @@ public:
   }
   AllocPackMetadataInst *
   createAllocPackMetadata(SILLocation loc,
-                          std::optional<SILType> elementType = std::nullopt,
-                          StackAllocationIsNested_t isNested =
-                            StackAllocationIsNested) {
+                          std::optional<SILType> elementType = std::nullopt) {
     return insert(new (getModule()) AllocPackMetadataInst(
         getSILDebugLocation(loc),
         elementType.value_or(
             SILType::getEmptyTupleType(getModule().getASTContext())
-                .getAddressType()),
-        isNested));
+                .getAddressType())));
   }
 
   AllocRefInst *createAllocRef(SILLocation Loc, SILType ObjectType,
@@ -1839,64 +1836,6 @@ public:
     SILType EltType = Operand->getType().getEnumElementType(
         Element, getModule(), getTypeExpansionContext());
     return createUncheckedTakeEnumDataAddr(Loc, Operand, Element, EltType);
-  }
-
-  UncheckedInPlaceEnumDataAddrInst *
-  createUncheckedInPlaceEnumDataAddr(SILLocation Loc, SILValue Operand,
-                                  EnumElementDecl *Element, SILType Ty) {
-    // Assert that this works and does not crash.
-    (void)getModule().getCaseIndex(Element);
-
-    return insert(new (getModule()) UncheckedInPlaceEnumDataAddrInst(
-        getSILDebugLocation(Loc), Operand, Element, Ty));
-  }
-
-  UncheckedInPlaceEnumDataAddrInst *
-  createUncheckedInPlaceEnumDataAddr(SILLocation Loc, SILValue Operand,
-                                  EnumElementDecl *Element) {
-    SILType EltType = Operand->getType().getEnumElementType(
-        Element, getModule(), getTypeExpansionContext());
-    return createUncheckedInPlaceEnumDataAddr(Loc, Operand, Element, EltType);
-  }
-
-  UncheckedEnumDataAddrInstBase *
-  createUncheckedEnumDataAddrForTake(SILLocation Loc, SILValue Operand,
-                                     EnumElementDecl *Element, SILType Ty) {
-    if (UncheckedEnumDataAddrInstBase::isDestructive(Element->getParentEnum(),
-                                                     &getFunction())) {
-      return createUncheckedTakeEnumDataAddr(Loc, Operand, Element, Ty);
-    }
-    return createUncheckedInPlaceEnumDataAddr(Loc, Operand, Element, Ty);
-  }
-
-  UncheckedEnumDataAddrInstBase *
-  createUncheckedEnumDataAddrForTake(SILLocation Loc, SILValue Operand,
-                                     EnumElementDecl *Element) {
-    if (UncheckedEnumDataAddrInstBase::isDestructive(Element->getParentEnum(),
-                                                     &getFunction())) {
-      return createUncheckedTakeEnumDataAddr(Loc, Operand, Element);
-    }
-    return createUncheckedInPlaceEnumDataAddr(Loc, Operand, Element);
-  }
-
-  UncheckedBorrowEnumDataAddrInst *
-  createUncheckedBorrowEnumDataAddr(SILLocation Loc, SILValue Enum,
-                                    SILValue Scratch,
-                                  EnumElementDecl *Element, SILType Ty) {
-    // Assert that this works and does not crash.
-    (void)getModule().getCaseIndex(Element);
-
-    return insert(new (getModule()) UncheckedBorrowEnumDataAddrInst(
-        getSILDebugLocation(Loc), Enum, Scratch, Element, Ty));
-  }
-
-  UncheckedBorrowEnumDataAddrInst *
-  createUncheckedBorrowEnumDataAddr(SILLocation Loc, SILValue Enum,
-                                    SILValue Scratch,
-                                  EnumElementDecl *Element) {
-    SILType EltType = Enum->getType().getEnumElementType(
-        Element, getModule(), getTypeExpansionContext());
-    return createUncheckedBorrowEnumDataAddr(Loc, Enum, Scratch, Element, EltType);
   }
 
   InjectEnumAddrInst *createInjectEnumAddr(SILLocation Loc, SILValue Operand,

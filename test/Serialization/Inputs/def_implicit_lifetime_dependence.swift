@@ -85,5 +85,3 @@ public struct GCM {
     return message
   }
 }
-public func takeViewCallback(f: () -> BufferView) {
-}

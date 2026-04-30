@@ -222,23 +222,10 @@ SwiftModuleScanner::scanInterfaceFile(Identifier moduleID,
         bool isStrictMemorySafety =
             llvm::find(ArgsRefs, "-strict-memory-safety") != ArgsRefs.end();
 
-        LibraryLevel libraryLevel = LibraryLevel::Other;
-        auto libLevelIt = llvm::find(ArgsRefs, "-library-level");
-        if (libLevelIt != ArgsRefs.end() &&
-            (libLevelIt + 1) != ArgsRefs.end()) {
-          libraryLevel = llvm::StringSwitch<LibraryLevel>(*(libLevelIt + 1))
-                             .Case("api", LibraryLevel::API)
-                             .Case("spi", LibraryLevel::SPI)
-                             .Case("ipi", LibraryLevel::IPI)
-                             .Default(LibraryLevel::Other);
-        }
-
         Result = ModuleDependencyInfo::forSwiftInterfaceModule(
             InPath, compiledCandidatesRefs, ArgsRefs, {}, {}, linkLibraries,
             isFramework, isStatic, isStrictMemorySafety, {},
             /*module-cache-key*/ "", UserModVer);
-        if (libraryLevel == LibraryLevel::IPI)
-          Result->setLibraryLevel(libraryLevel);
 
         // Walk the source file to find the import declarations.
         llvm::StringSet<> alreadyAddedModules;
@@ -295,8 +282,8 @@ SwiftModuleScanner::scanInterfaceFile(Identifier moduleID,
   if (code) {
     return code;
   }
-  // Use path heuristic for API/SPI; IPI was already set from the flags above.
-  if (Result->getLibraryLevel() != LibraryLevel::IPI) {
+  // Compute library level based on the interface file path.
+  {
     SmallString<256> modulePathBuf;
     StringRef modulePath = moduleInterfacePath.toStringRef(modulePathBuf);
     Result->setLibraryLevel(libraryLevelFromPath(
@@ -397,17 +384,11 @@ llvm::ErrorOr<ModuleDependencyInfo> SwiftModuleScanner::scanBinaryModuleFile(
                                     deps->ExecutablePath);
   }
 
-  // Use the stored value only for IPI; path heuristic handles API/SPI as
-  // before.
+  // Compute library level based on the binary module path.
   {
-    auto storedLevel = loadedModuleFile->getLibraryLevel();
-    if (storedLevel == LibraryLevel::IPI) {
-      dependencies.setLibraryLevel(storedLevel);
-    } else {
-      dependencies.setLibraryLevel(libraryLevelFromPath(
-          definingModulePath, Ctx.SearchPathOpts.getSDKPath(),
-          Ctx.LangOpts.Target));
-    }
+    dependencies.setLibraryLevel(libraryLevelFromPath(
+        definingModulePath, Ctx.SearchPathOpts.getSDKPath(),
+        Ctx.LangOpts.Target));
   }
 
   return std::move(dependencies);

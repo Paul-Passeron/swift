@@ -721,7 +721,7 @@ public:
     if (auto apply = dyn_cast<ApplyExpr>(E)) {
       if (auto type = apply->getFn()->getType()) {
         if (auto fnType = type->getAs<AnyFunctionType>();
-            fnType && fnType->getIsolation().isNonisolatedNonsending()) {
+            fnType && fnType->getIsolation().isNonIsolatedCaller()) {
           HasUsesOfCurrentIsolation = true;
         }
       }

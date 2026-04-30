@@ -1403,7 +1403,7 @@ void ConformanceIsolationRequest::cacheResult(ActorIsolation result) const {
   auto conformance = std::get<0>(getStorage());
 
   // Common case: conformance is nonisolated.
-  if (result.isNonisolatedOrConcurrent()) {
+  if (result.isNonisolated()) {
     conformance->setComputedNonnisolated();
     return;
   }
@@ -1899,10 +1899,9 @@ SourceLoc MacroDefinitionRequest::getNearestLoc() const {
 
 bool ActorIsolation::requiresSubstitution() const {
   switch (kind) {
-  case NonisolatedNonsending:
+  case CallerIsolationInheriting:
   case ActorInstance:
   case Nonisolated:
-  case NonisolatedConcurrent:
   case NonisolatedUnsafe:
   case Unspecified:
     return false;
@@ -1916,9 +1915,8 @@ bool ActorIsolation::requiresSubstitution() const {
 ActorIsolation ActorIsolation::subst(SubstitutionMap subs) const {
   switch (kind) {
   case ActorInstance:
-  case NonisolatedNonsending:
+  case CallerIsolationInheriting:
   case Nonisolated:
-  case NonisolatedConcurrent:
   case NonisolatedUnsafe:
   case Unspecified:
     return *this;
@@ -1938,7 +1936,7 @@ void ActorIsolation::printForDiagnostics(llvm::raw_ostream &os,
     os << "actor" << (asNoun ? " isolation" : "-isolated");
     break;
 
-  case ActorIsolation::NonisolatedNonsending:
+  case ActorIsolation::CallerIsolationInheriting:
     os << "caller isolation inheriting"
        << (asNoun ? " isolation" : "-isolated");
     break;
@@ -1958,13 +1956,6 @@ void ActorIsolation::printForDiagnostics(llvm::raw_ostream &os,
     break;
 
   case ActorIsolation::Nonisolated:
-    os << "nonisolated";
-    break;
-
-  case ActorIsolation::NonisolatedConcurrent:
-    os << "@concurrent";
-    break;
-
   case ActorIsolation::NonisolatedUnsafe:
   case ActorIsolation::Unspecified:
     os << "nonisolated";
@@ -1973,16 +1964,6 @@ void ActorIsolation::printForDiagnostics(llvm::raw_ostream &os,
     }
     break;
   }
-}
-
-StringRef ActorIsolation::printStringForDiagnostics(
-    ASTContext &ctx, StringRef openingQuotationMark, bool asNoun) const {
-  SmallString<64> str;
-  {
-    llvm::raw_svector_ostream os(str);
-    printForDiagnostics(os, openingQuotationMark, asNoun);
-  }
-  return ctx.getIdentifier(str).str();
 }
 
 void ActorIsolation::print(llvm::raw_ostream &os) const {
@@ -1996,14 +1977,11 @@ void ActorIsolation::print(llvm::raw_ostream &os) const {
       os << ". name: '" << vd->getBaseIdentifier() << "'";
     }
     return;
+  case CallerIsolationInheriting:
+    os << "caller_isolation_inheriting";
+    return;
   case Nonisolated:
     os << "nonisolated";
-    return;
-  case NonisolatedNonsending:
-    os << "nonisolated(nonsending)";
-    return;
-  case NonisolatedConcurrent:
-    os << "@concurrent";
     return;
   case NonisolatedUnsafe:
     os << "nonisolated_unsafe";
@@ -2026,14 +2004,11 @@ void ActorIsolation::printForSIL(llvm::raw_ostream &os) const {
   case ActorInstance:
     os << "actor_instance";
     return;
+  case CallerIsolationInheriting:
+    os << "caller_isolation_inheriting";
+    return;
   case Nonisolated:
     os << "nonisolated";
-    return;
-  case NonisolatedNonsending:
-    os << "nonisolated(nonsending)";
-    return;
-  case NonisolatedConcurrent:
-    os << "@concurrent";
     return;
   case NonisolatedUnsafe:
     os << "nonisolated_unsafe";
@@ -2088,12 +2063,11 @@ void swift::simple_display(
       }
       break;
 
-    case ActorIsolation::NonisolatedNonsending:
+    case ActorIsolation::CallerIsolationInheriting:
       out << "isolated to isolation of caller";
       break;
 
     case ActorIsolation::Nonisolated:
-    case ActorIsolation::NonisolatedConcurrent:
     case ActorIsolation::NonisolatedUnsafe:
       out << "nonisolated";
       if (state == ActorIsolation::NonisolatedUnsafe) {

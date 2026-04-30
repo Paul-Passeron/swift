@@ -1263,22 +1263,22 @@ public:
 /// \code
 ///   x : nonisolated(nonsending) () async -> Int
 /// \endcode
-class NonisolatedNonsendingTypeRepr : public TypeRepr {
+class CallerIsolatedTypeRepr : public TypeRepr {
   TypeRepr *Base;
   SourceLoc Loc;
 
 public:
-  NonisolatedNonsendingTypeRepr(TypeRepr *Base, SourceLoc Loc)
-      : TypeRepr(TypeReprKind::NonisolatedNonsending), Base(Base), Loc(Loc) {
+  CallerIsolatedTypeRepr(TypeRepr *Base, SourceLoc Loc)
+      : TypeRepr(TypeReprKind::CallerIsolated), Base(Base), Loc(Loc) {
     assert(Base);
   }
 
   TypeRepr *getBase() const { return Base; }
 
   static bool classof(const TypeRepr *T) {
-    return T->getKind() == TypeReprKind::NonisolatedNonsending;
+    return T->getKind() == TypeReprKind::CallerIsolated;
   }
-  static bool classof(const NonisolatedNonsendingTypeRepr *T) { return true; }
+  static bool classof(const CallerIsolatedTypeRepr *T) { return true; }
 
 private:
   SourceLoc getStartLocImpl() const { return Loc; }
@@ -1730,7 +1730,7 @@ inline bool TypeRepr::isSimple() const {
   case TypeReprKind::ConstValue:
   case TypeReprKind::LifetimeDependent:
   case TypeReprKind::GenericArgumentExpr:
-  case TypeReprKind::NonisolatedNonsending:
+  case TypeReprKind::CallerIsolated:
     return true;
   }
   llvm_unreachable("bad TypeRepr kind");

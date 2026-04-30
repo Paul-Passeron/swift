@@ -621,9 +621,7 @@ void SILSerializer::writeSILFunction(const SILFunction &F, bool DeclOnly) {
       (unsigned)F.getOptimizationMode(), (unsigned)F.getPerfConstraints(),
       (unsigned)F.getClassSubclassScope(), (unsigned)F.hasCReferences(),
       (unsigned)F.markedAsUsed(), (unsigned)F.getEffectsKind(),
-      (unsigned)numTrailingRecords, (unsigned)F.hasOwnership(),
-      F.isAlwaysWeakImported(),
-      F.codeGenerationModel() ? (static_cast<unsigned>(*F.codeGenerationModel()) + 1) : 0,
+      (unsigned)numTrailingRecords, (unsigned)F.hasOwnership(), F.isAlwaysWeakImported(),
       LIST_VER_TUPLE_PIECES(available), (unsigned)F.isDynamicallyReplaceable(),
       (unsigned)F.isExactSelfClass(), (unsigned)F.isDistributed(),
       (unsigned)F.isRuntimeAccessible(),
@@ -2592,7 +2590,6 @@ void SILSerializer::writeSILInstruction(const SILInstruction &SI) {
   case SILInstructionKind::InitEnumDataAddrInst:
   case SILInstructionKind::UncheckedEnumDataInst:
   case SILInstructionKind::UncheckedTakeEnumDataAddrInst:
-  case SILInstructionKind::UncheckedInPlaceEnumDataAddrInst:
   case SILInstructionKind::InjectEnumAddrInst: {
     // Has a typed valueref and a field decl. We use SILOneValueOneOperandLayout
     // where the field decl is streamed as a ValueID.
@@ -2623,9 +2620,8 @@ void SILSerializer::writeSILInstruction(const SILInstruction &SI) {
       tDecl = cast<UncheckedEnumDataInst>(&SI)->getElement();
       break;
     case SILInstructionKind::UncheckedTakeEnumDataAddrInst:
-    case SILInstructionKind::UncheckedInPlaceEnumDataAddrInst:
-      operand = cast<UncheckedEnumDataAddrInstBase>(&SI)->getEnum();
-      tDecl = cast<UncheckedEnumDataAddrInstBase>(&SI)->getElement();
+      operand = cast<UncheckedTakeEnumDataAddrInst>(&SI)->getOperand();
+      tDecl = cast<UncheckedTakeEnumDataAddrInst>(&SI)->getElement();
       break;
     case SILInstructionKind::InjectEnumAddrInst:
       operand = cast<InjectEnumAddrInst>(&SI)->getOperand();
@@ -2638,25 +2634,6 @@ void SILSerializer::writeSILInstruction(const SILInstruction &SI) {
         S.addTypeRef(operand->getType().getRawASTType()),
         (unsigned)operand->getType().getCategory(),
         addValueRef(operand));
-    break;
-  }
-  case SILInstructionKind::UncheckedBorrowEnumDataAddrInst: {
-    auto UEI = cast<UncheckedBorrowEnumDataAddrInst>(&SI);
-    // Compared to the other enum instructions, this variant has an additional
-    // operand for the scratch buffer, so uses a different encoding layout.
-    SmallVector<ValueID, 7> ListOfValues;
-    ListOfValues.push_back(S.addDeclRef(UEI->getElement()));
-    ListOfValues.push_back(S.addTypeRef(UEI->getEnum()->getType().getRawASTType()));
-    ListOfValues.push_back(unsigned(UEI->getEnum()->getType().getCategory()));
-    ListOfValues.push_back(addValueRef(UEI->getEnum()));
-    ListOfValues.push_back(S.addTypeRef(UEI->getScratch()->getType().getRawASTType()));
-    ListOfValues.push_back(unsigned(UEI->getScratch()->getType().getCategory()));
-    ListOfValues.push_back(addValueRef(UEI->getScratch()));
-    SILOneTypeValuesLayout::emitRecord(Out, ScratchRecord,
-        SILAbbrCodes[SILOneTypeValuesLayout::Code],
-        (unsigned)UEI->getKind(), S.addTypeRef(UEI->getType().getRawASTType()),
-        (unsigned)UEI->getType().getCategory(),
-        ListOfValues);
     break;
   }
   case SILInstructionKind::RefTailAddrInst: {
@@ -3792,9 +3769,11 @@ bool SILSerializer::shouldEmitFunctionBody(const SILFunction *F,
   if (F->isAvailableExternally())
     return false;
 
-  // Don't serialize the body if the client can never see it.
-  if (F->isNeverEmitIntoClient())
-    return false;
+  if (F->getDeclRef().hasDecl()) {
+    if (auto decl = F->getDeclRef().getDecl())
+      if (decl->isNeverEmittedIntoClient())
+        return false;
+  }
 
   // If we are asked to serialize everything, go ahead and do it.
   if (Options.SerializeAllSIL)

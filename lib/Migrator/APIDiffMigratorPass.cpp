@@ -162,7 +162,7 @@ public:
     return visit(T->getBase());
   }
 
-  FoundResult visitNonisolatedNonsendingTypeRepr(NonisolatedNonsendingTypeRepr *T) {
+  FoundResult visitCallerIsolatedTypeRepr(CallerIsolatedTypeRepr *T) {
     return visit(T->getBase());
   }
 

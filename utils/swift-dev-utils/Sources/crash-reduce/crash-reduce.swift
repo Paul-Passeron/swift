@@ -75,9 +75,6 @@ struct ReduceCommand: AsyncParsableCommand {
   @Flag(help: "Avoid trying reproducer configurations that are slow")
   var quick: Bool = false
 
-  @Flag(help: "Only check reproducer signatures, don't attempt to reduce or write any test cases")
-  var checkOnly: Bool = false
-
   @Flag(
     name: .customLong("rm"), help: "Delete input files on successful reduction"
   )
@@ -113,9 +110,6 @@ extension ReduceCommand {
   var defaultIDECrasherOutputPath: AbsolutePath {
     Self.inferredRepoPath.appending("validation-test/IDE/crashers")
   }
-  var defaultCxxCrasherOutputPath: AbsolutePath {
-    defaultCrasherOutputPath.appending("CxxInterop")
-  }
 
   func computeSDKPath() async throws -> AbsolutePath {
     if let sdkPath {
@@ -146,24 +140,19 @@ extension ReduceCommand {
     let ideCrashersPath = self.ideCrashersPath.map(\.absoluteInWorkingDir)
     try await ProcessReproducers(
       from: fromDir,
-      to: OutputDirs(
-        main: toDir ?? defaultCrasherOutputPath,
-        ideCrashers: ideCrashersPath ?? toDir ?? defaultIDECrasherOutputPath,
-        cxxCrashers: toDir ?? defaultCxxCrasherOutputPath,
-      ),
+      to: toDir ?? defaultCrasherOutputPath,
       otherInputs: self.otherInputs.map(\.absoluteInWorkingDir),
+      ideOutputDir: ideCrashersPath ?? toDir ?? defaultIDECrasherOutputPath,
       toolchain: Toolchain(
         swiftPath: swiftPath.absoluteInWorkingDir,
         sdkPath: computeSDKPath()
       ),
       quickMode: quick,
-      deleteInputs: deleteInputs,
-      reprocess: reprocess,
-      ignoreExisting: ignoreExisting,
-      fileIssues: fileIssues,
-      frontendArgs: frontendArgs.map { .value($0) },
-      checkOnly: checkOnly
-    ).process()
+      deleteInputs: deleteInputs
+    ).process(
+       reprocess: reprocess, ignoreExisting: ignoreExisting,
+       fileIssues: fileIssues, frontendArgs: frontendArgs.map { .value($0) }
+    )
   }
 }
 
@@ -196,15 +185,18 @@ struct GetSignatureCommand: ParsableCommand {
       }
       return input
     }()
-    func runOnce() -> Signature {
-      CrashLog(from: input).signature
+    func runOnce() -> Signature? {
+      CrashLog(from: input)?.signature
     }
     let start = Date()
     for _ in 0 ..< repeats {
-      // TODO: Make sure this doesn't get optimized out?
-      _ = runOnce()
+      guard runOnce() != nil else {
+        Darwin.exit(1)
+      }
     }
-    let sig = runOnce()
+    guard let sig = runOnce() else {
+      Darwin.exit(1)
+    }
     print(sig)
     if repeats > 0 {
       print("\(Int((Date().timeIntervalSince(start) * 1000).rounded()))ms")

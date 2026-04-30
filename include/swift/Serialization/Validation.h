@@ -16,7 +16,6 @@
 #include "swift/AST/Identifier.h"
 #include "swift/Basic/CXXStdlibKind.h"
 #include "swift/Basic/LLVM.h"
-#include "swift/Basic/LangOptions.h"
 #include "swift/Basic/SourceLoc.h"
 #include "swift/Basic/Version.h"
 #include "swift/Parse/ParseVersion.h"
@@ -29,7 +28,6 @@
 namespace swift {
 
 class ModuleFile;
-enum class CodeGenerationModel: uint8_t;
 struct ExplicitSwiftModuleMap;
 struct ExplicitClangModuleMap;
 enum class ResilienceStrategy : unsigned;
@@ -153,9 +151,8 @@ class ExtendedValidationInfo {
     unsigned AllowNonResilientAccess: 1;
     unsigned SerializePackageEnabled: 1;
     unsigned StrictMemorySafety: 1;
-    unsigned CodeGenModel: 2;
+    unsigned DeferredCodeGen: 1;
     unsigned AggressiveCMOEnabled : 1;
-    unsigned LibraryLevel : 2;
   } Bits;
 
 public:
@@ -266,11 +263,11 @@ public:
     Bits.StrictMemorySafety = val;
   }
 
-  CodeGenerationModel codeGenerationModel() const {
-    return static_cast<CodeGenerationModel>(Bits.CodeGenModel);
+  bool deferredCodeGen() const {
+    return Bits.DeferredCodeGen;
   }
-  void setCodeGenerationModel(CodeGenerationModel val) {
-    Bits.CodeGenModel = static_cast<unsigned>(val);
+  void setDeferredCodeGen(bool val = true) {
+    Bits.DeferredCodeGen = val;
   }
 
   bool isAggressiveCMOEnabled() const {
@@ -278,13 +275,6 @@ public:
   }
   void setAggressiveCMOEnabled(bool val = true) {
     Bits.AggressiveCMOEnabled = val;
-  }
-
-  LibraryLevel getLibraryLevel() const {
-    return LibraryLevel(Bits.LibraryLevel);
-  }
-  void setLibraryLevel(LibraryLevel level) {
-    Bits.LibraryLevel = unsigned(level);
   }
 
   bool hasCxxInteroperability() const { return Bits.HasCxxInteroperability; }

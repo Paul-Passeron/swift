@@ -228,11 +228,8 @@ static bool readOptionsBlock(llvm::BitstreamCursor &cursor,
     case options_block::STRICT_MEMORY_SAFETY:
       extendedInfo.setStrictMemorySafety(true);
       break;
-    case options_block::CODE_GENERATION_MODEL:
-      unsigned codeGenModel;
-      options_block::CodeGenerationModelLayout::readRecord(scratch, codeGenModel);
-      extendedInfo.setCodeGenerationModel(
-          static_cast<CodeGenerationModel>(codeGenModel));
+    case options_block::DEFERRED_CODE_GEN:
+      extendedInfo.setDeferredCodeGen(true);
       break;
     case options_block::OSLOG_STRING_SECTION_NAME:
       extendedInfo.setOSLogStringSectionName(blobData);
@@ -240,12 +237,6 @@ static bool readOptionsBlock(llvm::BitstreamCursor &cursor,
     case options_block::AGGRESSIVE_CMO:
       extendedInfo.setAggressiveCMOEnabled(true);
       break;
-    case options_block::LIBRARY_LEVEL: {
-      unsigned rawLevel;
-      options_block::LibraryLevelLayout::readRecord(scratch, rawLevel);
-      extendedInfo.setLibraryLevel(LibraryLevel(rawLevel));
-      break;
-    }
     default:
       // Unknown options record, possibly for use by a future version of the
       // module format.
@@ -1612,10 +1603,8 @@ ModuleFileSharedCore::ModuleFileSharedCore(
       Bits.AllowNonResilientAccess = extInfo.allowNonResilientAccess();
       Bits.SerializePackageEnabled = extInfo.serializePackageEnabled();
       Bits.StrictMemorySafety = extInfo.strictMemorySafety();
-      Bits.CodeGenModel =
-          static_cast<unsigned>(extInfo.codeGenerationModel());
+      Bits.DeferredCodeGen = extInfo.deferredCodeGen();
       Bits.AggressiveCMOEnabled = extInfo.isAggressiveCMOEnabled();
-      Bits.LibraryLevel = unsigned(extInfo.getLibraryLevel());
       MiscVersion = info.miscVersion;
       SDKVersion = info.sdkVersion;
       ModuleABIName = extInfo.getModuleABIName();

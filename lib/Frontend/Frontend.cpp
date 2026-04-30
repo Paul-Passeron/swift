@@ -27,7 +27,6 @@
 #include "swift/AST/PluginLoader.h"
 #include "swift/AST/TypeCheckRequests.h"
 #include "swift/Basic/Assertions.h"
-#include "swift/Basic/CodeGenerationModel.h"
 #include "swift/Basic/FileTypes.h"
 #include "swift/Basic/Platform.h"
 #include "swift/Basic/SourceManager.h"
@@ -1551,21 +1550,13 @@ ModuleDecl *CompilerInstance::getMainModule() const {
       MainModule->setSerializePackageEnabled();
     if (Invocation.getLangOptions().hasFeature(Feature::StrictMemorySafety))
       MainModule->setStrictMemorySafety(true);
-    if (Invocation.getLangOptions().hasFeature(Feature::Embedded)) {
-      bool isImplementation =
-          Invocation.getLangOptions().hasFeature(Feature::DeferredCodeGen);
-      MainModule->setCodeGenerationModel(
-          isImplementation ? CodeGenerationModel::Implementation
-                           : CodeGenerationModel::Inlinable);
-    } else {
-      MainModule->setCodeGenerationModel(CodeGenerationModel::Interface);
-    }
+    if (Invocation.getLangOptions().hasFeature(Feature::Embedded) &&
+        Invocation.getLangOptions().hasFeature(Feature::DeferredCodeGen))
+      MainModule->setDeferredCodeGen(true);
     if (Invocation.getSILOptions().CMOMode ==
-          CrossModuleOptimizationMode::Aggressive ||
-        Invocation.getSILOptions().CMOMode ==
-          CrossModuleOptimizationMode::Everything) {
+        CrossModuleOptimizationMode::Aggressive)
       MainModule->setAggressiveCMOEnabled(true);
-    }
+
     configureAvailabilityDomains(getASTContext(),
                                  Invocation.getFrontendOptions(), MainModule);
 

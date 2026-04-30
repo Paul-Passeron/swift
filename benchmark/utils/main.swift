@@ -216,7 +216,6 @@ import SubstringTest
 import Suffix
 import SuperChars
 import TaskGroups
-import TaskLocalGet
 import TwoSum
 import TypeFlood
 import UTF8Decode
@@ -432,7 +431,6 @@ register(SubstringTest.benchmarks)
 register(Suffix.benchmarks)
 register(SuperChars.benchmarks)
 register(TaskGroups.benchmarks)
-register(TaskLocalGet.benchmarks)
 register(TwoSum.benchmarks)
 register(TypeFlood.benchmarks)
 register(UTF8Decode.benchmarks)

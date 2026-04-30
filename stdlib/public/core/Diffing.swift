@@ -612,7 +612,7 @@ func _linearSpaceMyers<C,D>(
   ) -> R {
     if let result = values.withContiguousStorageIfAvailable(body) { return result }
     let array = ContiguousArray(values)
-    return array.withUnsafeBufferPointer(body)
+    return unsafe array.withUnsafeBufferPointer(body)
   }
 
   return unsafe _withContiguousStorage(for: old) { a in

@@ -451,7 +451,7 @@ static void swift_cvw_initEnumMetadataMultiPayloadWithLayoutStringImpl(
 
   // Accumulate the layout requirements of the payloads.
   size_t payloadSize = 0, alignMask = 0;
-  bool isPOD = true, isBT = true, isBB = true, isAFD = false;
+  bool isPOD = true, isBT = true;
 
   size_t payloadRefCountBytes = 0;
   for (unsigned i = 0; i < numPayloads; ++i) {
@@ -461,8 +461,6 @@ static void swift_cvw_initEnumMetadataMultiPayloadWithLayoutStringImpl(
     alignMask |= payloadLayout->flags.getAlignmentMask();
     isPOD &= payloadLayout->flags.isPOD();
     isBT &= payloadLayout->flags.isBitwiseTakable();
-    isBB &= payloadLayout->flags.isBitwiseBorrowable();
-    isAFD |= payloadLayout->flags.isAddressableForDependencies();
 
     payloadRefCountBytes += _swift_refCountBytesForMetatype(payloadLayouts[i]);
     // NUL terminator
@@ -562,8 +560,6 @@ static void swift_cvw_initEnumMetadataMultiPayloadWithLayoutStringImpl(
                      .withAlignmentMask(alignMask)
                      .withPOD(isPOD)
                      .withBitwiseTakable(isBT)
-                     .withBitwiseBorrowable(isBB)
-                     .withAddressableForDependencies(isAFD)
                      .withEnumWitnesses(true)
                      .withInlineStorage(ValueWitnessTable::isValueInline(
                          isBT, totalSize, alignMask + 1)),

@@ -120,7 +120,8 @@ public:
 void OptimizeHopToExecutor::collectActors(Actors &actors) {
   int uniqueActorID = 0;
 
-  if (function->getActorIsolation().isNonisolatedNonsending()) {
+  if (auto isolation = function->getActorIsolation();
+      isolation && isolation->isCallerIsolationInheriting()) {
     actors[function->maybeGetIsolatedArgument()] = uniqueActorID++;
   }
 
@@ -198,7 +199,7 @@ void OptimizeHopToExecutor::solveDataflowBackward() {
 /// Returns true if \p inst is a suspension point or an async call.
 static bool isSuspensionPoint(SILInstruction *inst) {
   if (auto applySite = FullApplySite::isa(inst)) {
-    if (applySite.isAsync() && !applySite.isNonisolatedNonsending())
+    if (applySite.isAsync() && !applySite.isCallerIsolationInheriting())
       return true;
     return false;
   }
@@ -222,7 +223,8 @@ bool OptimizeHopToExecutor::removeRedundantHopToExecutors(const Actors &actors) 
         return BlockState::NotSet;
       }
 
-      if (function->getActorIsolation().isNonisolatedNonsending()) {
+      if (auto isolation = function->getActorIsolation();
+          isolation && isolation->isCallerIsolationInheriting()) {
         auto *fArg =
             cast<SILFunctionArgument>(function->maybeGetIsolatedArgument());
         return actors.lookup(SILValue(fArg));
@@ -390,20 +392,20 @@ bool OptimizeHopToExecutor::needsExecutor(SILInstruction *inst) {
   // executors since caller isolation inheriting functions do not hop in their
   // prologue.
   if (auto fas = FullApplySite::isa(inst);
-      fas && fas.isAsync() && fas.isNonisolatedNonsending()) {
+      fas && fas.isAsync() && fas.isCallerIsolationInheriting()) {
     return true;
   }
 
-  // Treat function exits from a caller isolation inheriting function as
-  // requiring the liveness of hop to executors before it.
+  // Treat returns from a caller isolation inheriting function as requiring the
+  // liveness of hop to executors before it.
   //
   // DISCUSSION: We do this since callers of callee functions with isolation
   // inheriting isolation are not required to have a hop after the return from
   // the callee function... so we have no guarantee that there isn't code in the
   // caller that needs this hop to executor to run on the correct actor.
-  if (auto *term = dyn_cast<TermInst>(inst);
-      term && term->isFunctionExiting()) {
-    if (inst->getFunction()->getActorIsolation().isNonisolatedNonsending()) {
+  if (isa<ReturnInst>(inst)) {
+    if (auto isolation = inst->getFunction()->getActorIsolation();
+        isolation && isolation->isCallerIsolationInheriting()) {
       return true;
     }
   }

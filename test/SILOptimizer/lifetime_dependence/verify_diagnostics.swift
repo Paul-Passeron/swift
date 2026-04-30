@@ -452,8 +452,7 @@ func testMutableCapture(arg: consuming NCE, action: @escaping (inout NCE) -> ())
 
 // Implicit dependence on a nonescaping closure context.
 //
-// TODO: remove the _overrideLifetime when context dependencies are tracked and
-// non-escaping function types can be used as (copy) dependence sources (rdar://172511809).
+// TODO: remove the _overrideLifetime when context dependencies are tracked.
 @_lifetime(borrow value)
 func testBasicClosureDependency(value: AnyObject, body: () -> NE) -> NE {
   return _overrideLifetime(body(), borrowing: value)

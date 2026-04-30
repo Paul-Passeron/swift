@@ -72,17 +72,15 @@ SILFunction *GenericCloner::createDeclaration(
   // Create a new empty function.
   SILFunction *NewF = FunctionBuilder.createFunction(
       getSpecializedLinkage(Orig, Orig->getLinkage()), NewName,
-      ReInfo.getSpecializedType(), Orig->getActorIsolation(),
-      ReInfo.getSpecializedGenericEnvironment(), Orig->getLocation(),
-      Orig->isBare(), Orig->isTransparent(), ReInfo.getSerializedKind(),
-      IsNotDynamic, IsNotDistributed, IsNotRuntimeAccessible,
-      Orig->getEntryCount(), Orig->isThunk(), Orig->getClassSubclassScope(),
-      Orig->getInlineStrategy(), Orig->getEffectsKind(), Orig,
-      Orig->getDebugScope());
+      ReInfo.getSpecializedType(), ReInfo.getSpecializedGenericEnvironment(),
+      Orig->getLocation(), Orig->isBare(), Orig->isTransparent(),
+      ReInfo.getSerializedKind(), IsNotDynamic, IsNotDistributed,
+      IsNotRuntimeAccessible, Orig->getEntryCount(), Orig->isThunk(),
+      Orig->getClassSubclassScope(), Orig->getInlineStrategy(),
+      Orig->getEffectsKind(), Orig, Orig->getDebugScope());
   for (auto &Attr : Orig->getSemanticsAttrs()) {
     NewF->addSemanticsAttr(Attr);
   }
-
   NewF->setOptimizationMode(Orig->getOptimizationMode());
   if (!Orig->hasOwnership()) {
     NewF->setOwnershipEliminated();

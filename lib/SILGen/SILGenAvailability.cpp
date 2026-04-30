@@ -185,12 +185,7 @@ static void emitBackDeployForwardApplyAndReturnOrThrow(
   SILFunctionConventions fnConv(silFnType, SGF.SGM.M);
 
   SILValue functionRef = SGF.emitGlobalFunctionRef(loc, function);
-
-  // Only if the callee is generic, provide a forwarding substitution map.
-  SubstitutionMap subs;
-  if (fnType->getInvocationGenericSignature())
-    subs = SGF.F.getForwardingSubstitutionMap();
-
+  auto subs = SGF.F.getForwardingSubstitutionMap();
   SmallVector<SILValue, 4> directResults;
 
   // If the function is a coroutine, we need to use 'begin_apply'.

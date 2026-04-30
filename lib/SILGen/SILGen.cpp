@@ -664,11 +664,10 @@ SILGenModule::getKeyPathProjectionCoroutine(bool isReadAccess,
   auto env = sig.getGenericEnvironment();
 
   SILGenFunctionBuilder builder(*this);
-  fn = builder.createFunction(SILLinkage::PublicExternal, functionName,
-                              functionTy, ActorIsolation::forUnspecified(), env,
-                              /*location*/ std::nullopt, IsNotBare,
-                              IsNotTransparent, IsNotSerialized, IsNotDynamic,
-                              IsNotDistributed, IsNotRuntimeAccessible);
+  fn = builder.createFunction(
+      SILLinkage::PublicExternal, functionName, functionTy, env,
+      /*location*/ std::nullopt, IsNotBare, IsNotTransparent, IsNotSerialized,
+      IsNotDynamic, IsNotDistributed, IsNotRuntimeAccessible);
 
   return fn;
 }
@@ -819,6 +818,7 @@ SILFunction *SILGenModule::getFunction(SILDeclRef constant,
       });
 
   F->setDeclRef(constant);
+  F->setActorIsolation(constant.getActorIsolation());
 
   assert(F && "SILFunction should have been defined");
 
@@ -1350,6 +1350,9 @@ void SILGenModule::preEmitFunction(SILDeclRef constant, SILFunction *F,
   // Initialize F with the constant we created for it.
   F->setDeclRef(constant);
 
+  // Set our actor isolation.
+  F->setActorIsolation(constant.getActorIsolation());
+
   // Closures automatically infer [manual_ownership] based on outermost func.
   //
   // We need to add this constraint _prior_ to emitting the closure's body,
@@ -1472,7 +1475,7 @@ void SILGenModule::emitDifferentiabilityWitness(
     // we can serialize it (the original function itself might be HiddenExternal
     // in this case if we only have declaration without definition).
     auto linkage =
-        originalFunction->isAlwaysEmitIntoClient()
+        originalFunction->markedAsAlwaysEmitIntoClient()
             ? SILLinkage::PublicNonABI
             : stripExternalFromLinkage(originalFunction->getLinkage());
     diffWitness = SILDifferentiabilityWitness::createDefinition(
@@ -1908,8 +1911,7 @@ SILFunction *SILGenModule::emitLazyGlobalInitializer(StringRef funcName,
 
   SILGenFunctionBuilder builder(*this);
   auto *f = builder.createFunction(
-      SILLinkage::Private, funcName, initSILType,
-      ActorIsolation::forUnspecified(), nullptr, SILLocation(binding),
+      SILLinkage::Private, funcName, initSILType, nullptr, SILLocation(binding),
       IsNotBare, IsNotTransparent, IsNotSerialized, IsNotDynamic,
       IsNotDistributed, IsNotRuntimeAccessible);
   f->setSpecialPurpose(SILFunction::Purpose::GlobalInitOnceFunction);

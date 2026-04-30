@@ -113,8 +113,7 @@ std::vector<std::string> getPublicSymbols(TBDGenDescriptor desc);
 void writeTBDFile(ModuleDecl *M, llvm::raw_ostream &os,
                   const TBDGenOptions &opts);
 
-void writeAPIJSONFile(ModuleDecl *M, llvm::raw_ostream &os,
-                      const TBDGenOptions &opts, bool PrettyPrint);
+void writeAPIJSONFile(ModuleDecl *M, llvm::raw_ostream &os, bool PrettyPrint);
 
 } // end namespace swift
 

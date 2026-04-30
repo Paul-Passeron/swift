@@ -7,14 +7,3 @@
 @interface SubclassFromC : X
 - (instancetype)init;
 @end
-
-@protocol ObjCProtoInC
-- (void)witnessesObjCConformanceRequirementInC __attribute__((deprecated("ObjCProtoInC")));
-@end
-
-@interface Base () <ObjCProtoInC>
-@end
-
-@interface NSObject (Categories_C)
-- (nullable id)overriddenInCategoryWithMethodReturningOptional;
-@end

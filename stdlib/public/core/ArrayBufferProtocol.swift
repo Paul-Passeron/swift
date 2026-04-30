@@ -79,7 +79,6 @@ where Indices == Range<Int> {
 #if !$Embedded
   // Superseded by the typed-throws version of this function, but retained
   // for ABI reasons.
-  @safe
   func withUnsafeBufferPointer<R>(
     _ body: (UnsafeBufferPointer<Element>) throws -> R
   ) rethrows -> R
@@ -89,7 +88,6 @@ where Indices == Range<Int> {
   /// underlying contiguous storage.  If no such storage exists, it is
   /// created on-demand.
   @available(SwiftStdlib 6.1, *)
-  @safe
   func withUnsafeBufferPointer<R, E>(
     _ body: (UnsafeBufferPointer<Element>) throws(E) -> R
   ) throws(E) -> R
@@ -97,7 +95,6 @@ where Indices == Range<Int> {
 #if !$Embedded
   // Superseded by the typed-throws version of this function, but retained
   // for ABI reasons.
-  @safe
   mutating func withUnsafeMutableBufferPointer<R>(
     _ body: (UnsafeMutableBufferPointer<Element>) throws -> R
   ) rethrows -> R
@@ -108,7 +105,6 @@ where Indices == Range<Int> {
   ///
   /// - Precondition: Such contiguous storage exists or the buffer is empty.
   @available(SwiftStdlib 6.1, *)
-  @safe
   mutating func withUnsafeMutableBufferPointer<R, E>(
     _ body: (UnsafeMutableBufferPointer<Element>) throws(E) -> R
   ) throws(E) -> R

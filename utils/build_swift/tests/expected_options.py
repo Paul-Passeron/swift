@@ -140,7 +140,7 @@ EXPECTED_DEFAULTS = {
     'build_xros_device': False,
     'build_xros_simulator': False,
     'build_xctest': False,
-    'build_wasistdlib': False,
+    'build_wasmstdlib': False,
     'build_wasmkit': False,
     'cmake_c_launcher': None,
     'cmake_cxx_launcher': None,
@@ -342,7 +342,7 @@ EXPECTED_DEFAULTS = {
     'test_swiftformat': False,
     'test_swiftdocc': False,
     'test_toolchainbenchmarks': False,
-    'test_wasistdlib': True,
+    'test_wasmstdlib': True,
     'tvos': False,
     'tvos_all': False,
     'validation_test': None,
@@ -355,7 +355,6 @@ EXPECTED_DEFAULTS = {
     'clean_install_destdir': False,
     'use_linker': None,
     'enable_new_runtime_build': False,
-    'continue_on_test_failure': False,
 }
 
 
@@ -607,7 +606,7 @@ EXPECTED_OPTIONS = [
     SetTrueOption('--swiftformat', dest='build_swiftformat'),
     SetTrueOption('--swiftdocc', dest='build_swiftdocc'),
     SetTrueOption('--build-minimal-stdlib', dest='build_minimalstdlib'),
-    SetTrueOption('--build-wasi-stdlib', dest='build_wasistdlib'),
+    SetTrueOption('--build-wasm-stdlib', dest='build_wasmstdlib'),
     SetTrueOption('--wasmkit', dest='build_wasmkit'),
     SetTrueOption('--build-stdlib-docs'),
     SetTrueOption('--preview-stdlib-docs'),
@@ -797,8 +796,8 @@ EXPECTED_OPTIONS = [
                   dest='test_toolchainbenchmarks'),
     DisableOption('--skip-test-swift-inspect',
                   dest='test_swift_inspect'),
-    DisableOption('--skip-test-wasi-stdlib',
-                  dest='test_wasistdlib'),
+    DisableOption('--skip-test-wasm-stdlib',
+                  dest='test_wasmstdlib'),
     DisableOption('--skip-build-clang-tools-extra',
                   dest='build_clang_tools_extra'),
     DisableOption('--skip-build-libxml2', dest='build_libxml2'),
@@ -934,6 +933,4 @@ EXPECTED_OPTIONS = [
     StrOption('--llvm-install-components'),
     ChoicesOption('--use-linker', dest='use_linker', choices=['gold', 'lld']),
     EnableOption('--enable-new-runtime-build', dest='enable_new_runtime_build'),
-
-    EnableOption('--continue-on-test-failure', dest='continue_on_test_failure'),
 ]

@@ -19,7 +19,7 @@ public func myFunc(_ ptr: UnsafeRawPointer, _ size: CInt) {
 @_alwaysEmitIntoClient @_disfavoredOverload
 public func myFunc(_ ptr: RawSpan) {
     let size = CInt(exactly: ptr.byteCount)!
-    let _ptrPtr = ptr.withUnsafeBytes {
+    let _ptrPtr = unsafe ptr.withUnsafeBytes {
         unsafe $0
     }
     defer {

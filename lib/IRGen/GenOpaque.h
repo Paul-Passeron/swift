@@ -30,7 +30,6 @@ namespace irgen {
   class IRGenModule;
   class TypeInfo;
   enum class ValueWitness : unsigned;
-  class ComputedWitnessIndex;
   class WitnessIndex;
 
   /// Return the size of a fixed buffer.
@@ -44,7 +43,7 @@ namespace irgen {
   /// If \p areEntriesRelative is true we are emitting code for a relative
   /// protocol witness table.
   Address slotForLoadOfOpaqueWitness(IRGenFunction &IGF, llvm::Value *table,
-                                     ComputedWitnessIndex index,
+                                     WitnessIndex index,
                                      bool areEntriesRelative = false);
 
   /// Given a witness table (protocol or value), load one of the
@@ -55,7 +54,7 @@ namespace irgen {
   llvm::Value *emitInvariantLoadOfOpaqueWitness(IRGenFunction &IGF,
                                                 bool isProtocolWitness,
                                                 llvm::Value *table,
-                                                ComputedWitnessIndex index,
+                                                WitnessIndex index,
                                                 llvm::Value **slot = nullptr);
 
   /// Given a witness table (protocol or value), load one of the

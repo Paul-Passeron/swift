@@ -897,9 +897,7 @@ void irgen::storeFixedTypeEnumTagSinglePayload(
   payloadIndex->addIncoming(payloadIndex0, payloadLT4BB);
 
   if (fixedSize > Size(0)) {
-    // TODO: Setting the threshold at PointerSize causes stack clobbering in
-    // Windows validation tests. Investigate this before lowering the value further.
-    if (fixedSize <= IGM.getPointerSize() * 2) {
+    if (fixedSize.getValueInBits() <= llvm::IntegerType::MAX_INT_BITS / 4) {
       // Write the value to the payload as a zero extended integer.
       auto *intType = Builder.getIntNTy(fixedSize.getValueInBits());
       Builder.CreateStore(Builder.CreateZExtOrTrunc(payloadIndex, intType),

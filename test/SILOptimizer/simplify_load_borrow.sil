@@ -1,4 +1,3 @@
-// RUN: %target-sil-opt %s -onone-simplification -simplify-instruction=load_borrow | %FileCheck %s
 // RUN: %target-sil-opt %s -simplification -simplify-instruction=load_borrow | %FileCheck %s
 
 import Swift
@@ -191,3 +190,4 @@ bb1(%5 : @reborrow $B):
   dealloc_stack %1
   return %0
 }
+

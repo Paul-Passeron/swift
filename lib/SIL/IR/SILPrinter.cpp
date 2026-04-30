@@ -18,14 +18,12 @@
 
 #include "swift/AST/ASTPrinter.h"
 #include "swift/AST/Decl.h"
-#include "swift/AST/ExtInfo.h"
 #include "swift/AST/GenericEnvironment.h"
 #include "swift/AST/Module.h"
 #include "swift/AST/PrintOptions.h"
 #include "swift/AST/ProtocolConformance.h"
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
-#include "swift/Basic/CodeGenerationModel.h"
 #include "swift/Basic/QuotedString.h"
 #include "swift/Basic/STLExtras.h"
 #include "swift/Basic/SourceManager.h"
@@ -1687,7 +1685,6 @@ public:
     *this << API->getType().getObjectType();
   }
   void visitAllocPackMetadataInst(AllocPackMetadataInst *APMI) {
-    printNonNested(APMI);
     *this << APMI->getType().getObjectType();
   }
 
@@ -1845,9 +1842,6 @@ public:
     }
     switch (fnType->getIsolation().getKind()) {
     case SILFunctionTypeIsolation::Unknown:
-      break;
-    case SILFunctionTypeIsolation::NonisolatedNonsending:
-      *this << "[nonisolated_nonsending] ";
       break;
     case SILFunctionTypeIsolation::Erased:
       *this << "[isolated_any] ";
@@ -2653,18 +2647,6 @@ public:
   }
   
   void visitUncheckedTakeEnumDataAddrInst(UncheckedTakeEnumDataAddrInst *UDAI) {
-    *this << getIDAndType(UDAI->getOperand()) << ", "
-          << SILDeclRef(UDAI->getElement(), SILDeclRef::Kind::EnumElement);
-  }
-  
-  void visitUncheckedBorrowEnumDataAddrInst(UncheckedBorrowEnumDataAddrInst *UDAI) {
-    *this << getIDAndType(UDAI->getEnum()) << ", "
-          << SILDeclRef(UDAI->getElement(), SILDeclRef::Kind::EnumElement)
-          << " in "
-          << getIDAndType(UDAI->getScratch());
-  }
-  
-  void visitUncheckedInPlaceEnumDataAddrInst(UncheckedInPlaceEnumDataAddrInst *UDAI) {
     *this << getIDAndType(UDAI->getOperand()) << ", "
           << SILDeclRef(UDAI->getElement(), SILDeclRef::Kind::EnumElement);
   }
@@ -3754,9 +3736,11 @@ void SILFunction::print(SILPrintContext &PrintCtx) const {
   }
   OS << '\n';
 
-  OS << "// Isolation: ";
-  getActorIsolation().print(OS);
-  OS << '\n';
+  if (auto functionIsolation = getActorIsolation()) {
+    OS << "// Isolation: ";
+    functionIsolation->print(OS);
+    OS << '\n';
+  }
 
   printClangQualifiedNameCommentIfPresent(OS, getClangDecl());
 
@@ -3820,30 +3804,15 @@ void SILFunction::print(SILPrintContext &PrintCtx) const {
   }
   if (isAlwaysWeakImported())
     OS << "[weak_imported] ";
-  if (auto cgModel = codeGenerationModel()) {
-    switch (*cgModel) {
-    case CodeGenerationModel::Interface:
-      OS << "[export_interface] ";
-      break;
-
-    case CodeGenerationModel::Implementation:
-      OS << "[export_implementation] ";
-      break;
-
-    case CodeGenerationModel::Inlinable:
-      break;
-    }
-  }
-
   auto availability = getAvailabilityForLinkage();
   if (!availability.isAlwaysAvailable()) {
     OS << "[available " << availability.getVersionString() << "] ";
   }
 
   if (auto isolation = getActorIsolation()) {
-    if (isolation.isSILParsed() || SILPrintFunctionIsolationInfo) {
+    if (isolation->isSILParsed() || SILPrintFunctionIsolationInfo) {
       OS << "[isolation \"";
-      isolation.printForSIL(OS);
+      isolation->printForSIL(OS);
       OS << "\"] ";
     }
   }

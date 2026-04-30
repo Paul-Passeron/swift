@@ -298,9 +298,7 @@ static bool shouldDiagnoseDeclAccess(const ValueDecl *D,
   case ExportabilityReason::PropertyWrapper:
   case ExportabilityReason::ImplicitlyPublicVarDecl:
   case ExportabilityReason::ImplicitlyPublicVarDeclOpenClass:
-  case ExportabilityReason::ImplicitlyPublicVarDeclMissingAttribute:
-  case ExportabilityReason::ImplicitlyPublicVarDeclMissingDeinit:
-  case ExportabilityReason::ImplicitlyPublicVarDeclMissingAttributeAndDeinit:
+  case ExportabilityReason::ImplicitlyPublicVarDeclClassDeinit:
   case ExportabilityReason::ImplicitlyPublicAssociatedValue:
     return isInternalBridgingHeader &&
            where.getExportedLevel() == ExportedLevel::ImplicitlyExported;
@@ -402,21 +400,8 @@ static bool diagnoseValueDeclRefExportability(SourceLoc loc, const ValueDecl *D,
 
     D->diagnose(diag::kind_declared_here, D->getDescriptiveKind());
 
-    // Suggest fixes for references from class properties in embedded mode.
-    if (reason == ExportabilityReason::
-            ImplicitlyPublicVarDeclMissingAttribute ||
-        reason == ExportabilityReason::
-            ImplicitlyPublicVarDeclMissingAttributeAndDeinit) {
-      // Require @_implementationOnly on the property.
-      ctx.Diags.diagnose(loc,
-          diag::embedded_class_property_requires_implementation_only);
-    }
-
-    if (reason == ExportabilityReason::
-            ImplicitlyPublicVarDeclMissingDeinit ||
-        reason == ExportabilityReason::
-            ImplicitlyPublicVarDeclMissingAttributeAndDeinit) {
-      // Require @export(interface) deinit on the class.
+    // Suggest a fix for references from class properties in embedded mode.
+    if (reason == ExportabilityReason::ImplicitlyPublicVarDeclClassDeinit) {
       auto *parentClass = dyn_cast_or_null<ClassDecl>(DC->getAsDecl());
       if (parentClass) {
         auto inFlight = parentClass->diagnose(

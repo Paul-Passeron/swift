@@ -41,8 +41,3 @@ module NestedEnums {
     header "nested-enums.h"
     requires cplusplus
 }
-
-module WrappedCFNSOptions {
-    header "wrapped-cf-ns-options.h"
-    requires cplusplus
-}

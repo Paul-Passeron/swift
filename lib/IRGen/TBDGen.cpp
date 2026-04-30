@@ -953,9 +953,10 @@ apigen::API APIGenRequest::evaluate(Evaluator &evaluator,
 }
 
 void swift::writeAPIJSONFile(ModuleDecl *M, llvm::raw_ostream &os,
-                             const TBDGenOptions &TBDOpts, bool PrettyPrint) {
+                             bool PrettyPrint) {
+  TBDGenOptions opts;
   auto &evaluator = M->getASTContext().evaluator;
-  auto desc = TBDGenDescriptor::forModule(M, TBDOpts);
+  auto desc = TBDGenDescriptor::forModule(M, opts);
   auto api = evaluateOrFatal(evaluator, APIGenRequest{desc});
   api.writeAPIJSONFile(os, PrettyPrint);
 }

@@ -190,10 +190,10 @@ BridgedSendingTypeRepr BridgedSendingTypeRepr_createParsed(
       SendingTypeRepr(base.unbridged(), specifierLoc);
 }
 
-BridgedNonisolatedNonsendingTypeRepr BridgedNonisolatedNonsendingTypeRepr_createParsed(
+BridgedCallerIsolatedTypeRepr BridgedCallerIsolatedTypeRepr_createParsed(
     BridgedASTContext cContext, BridgedTypeRepr base, SourceLoc specifierLoc) {
   return new (cContext.unbridged())
-      NonisolatedNonsendingTypeRepr(base.unbridged(), specifierLoc);
+      CallerIsolatedTypeRepr(base.unbridged(), specifierLoc);
 }
 
 BridgedVarargTypeRepr BridgedVarargTypeRepr_createParsed(

@@ -32,13 +32,21 @@ extension Toolchain {
     let result = try await run(
       options.getCommandInvocation(for: inputs, with: self),
       output: .discarded,
-      error: .bytes(limit: .max)
+      error: .string(limit: .max)
     )
     switch result.terminationStatus {
     case .exited(code: 0), .exited(code: 1):
       return nil
     default:
-      return CrashLog(from: result.standardError)
+      let output = result.standardError ?? ""
+      guard let crashLog = CrashLog(from: output) else {
+        throw ReproducerError("""
+          couldn't extract sig for \
+          \(inputs.first!.parentDir!.fileName) \
+          <sig>\(output)</sig>
+          """)
+      }
+      return crashLog
     }
   }
 

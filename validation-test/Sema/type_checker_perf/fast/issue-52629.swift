@@ -1,9 +1,6 @@
 // RUN: %target-swift-frontend %s -typecheck -verify -solver-scope-threshold=100
 // REQUIRES: objc_interop
 
-// rdar://173654813
-// REQUIRES: OS=macosx
-
 // https://github.com/swiftlang/swift/issues/52629
 
 import Foundation

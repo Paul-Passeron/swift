@@ -58,6 +58,7 @@ struct CxxDeclEmissionScope {
   /// lexical scope.
   llvm::StringMap<llvm::SmallVector<EmittedFunctionOverload, 2>>
       emittedFunctionOverloads;
+  llvm::StringMap<const AccessorDecl *> emittedAccessorMethodNames;
 };
 
 /// Responsible for printing a Swift Decl or Type in Objective-C, to be

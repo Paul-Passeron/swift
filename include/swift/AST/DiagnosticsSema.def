@@ -174,16 +174,6 @@ GROUPED_ERROR(member_from_missing_imports_2_or_more,MemberImportVisibility,none,
       "%kind0 is not available due to missing imports of defining modules "
       "%2%select{ and|, }1 %3%select{|, and others}1",
       (const ValueDecl *, bool, const ModuleDecl *, const ModuleDecl *))
-GROUPED_ERROR(witness_from_missing_import,MemberImportVisibility,none,
-      "%kind0 used to satisfy a requirement of protocol %1 is not available "
-      "due to missing import of defining module %2",
-      (const ValueDecl *, const ProtocolDecl *, const ModuleDecl *))
-GROUPED_ERROR(witness_from_missing_imports_2_or_more,MemberImportVisibility,none,
-      "%kind0 used to satisfy a requirement of protocol %1 is not available "
-      "due to missing import of defining modules "
-      "%3%select{ and|, }2 %4%select{|, and others}2",
-      (const ValueDecl *, const ProtocolDecl *, bool, const ModuleDecl *,
-       const ModuleDecl *))
 NOTE(candidate_add_import,none,
      "add import of module %0", (const ModuleDecl *))
 
@@ -191,9 +181,6 @@ GROUPED_WARNING(add_required_import_for_member,MemberImportVisibility,none,
      "import of module %0 is required", (const ModuleDecl *))
 NOTE(decl_from_module_used_here,none,
      "%kind0 from %1 used here", (const ValueDecl *, const ModuleDecl *))
-NOTE(witness_from_module_used_here,none,
-     "%kind0 from %1 used to satisfy a requirement of protocol %2",
-     (const ValueDecl *, const ModuleDecl *, const ProtocolDecl *))
 
 ERROR(cannot_pass_rvalue_mutating_subelement,none,
       "cannot use mutating member on immutable value: %0",
@@ -659,7 +646,7 @@ NOTE(async_inferred_from_operation,none,
 // Key-path expressions.
 ERROR(expr_keypath_no_objc_runtime,none,
       "'#keyPath' can only be used with the Objective-C runtime", ())
-GROUPED_ERROR(expression_unused_keypath_result,NoUsage,NoUsage,
+ERROR(expression_unused_keypath_result,NoUsage,
       "result of key path is unused", ())
 ERROR(expr_keypath_non_objc_property,none,
       "argument of '#keyPath' refers to non-'@objc' property %0",
@@ -870,9 +857,9 @@ NOTE(sema_no_import_no_sdk,none,
 NOTE(sema_no_import_no_sdk_xcrun,none,
      "use \"xcrun swiftc\" to select the default macOS SDK "
      "installed with Xcode", ())
-GROUPED_WARNING(sema_import_current_module,ModuleSelfImport,none,
+WARNING(sema_import_current_module,none,
         "this file is part of module %0; ignoring import", (Identifier))
-GROUPED_WARNING(sema_import_current_module_with_file,ModuleSelfImport,none,
+WARNING(sema_import_current_module_with_file,none,
         "file '%0' is part of module %1; ignoring import",
         (StringRef, Identifier))
 ERROR(sema_opening_import,Fatal,
@@ -1257,8 +1244,7 @@ ERROR(in_package_module_not_compiled_from_source_or_package_interface,none,
       "modules of the same package can only be loaded if built from source or package interface: %2",
       (Identifier, StringRef, StringRef))
 
-GROUPED_WARNING(in_package_module_not_compiled_locally,
-        PackageModuleLoadedFromSDK,none,
+WARNING(in_package_module_not_compiled_locally,none,
         "module %0 is in package %1 but was loaded from SDK; "
         "modules of the same package should be built locally from source only: %2",
         (Identifier, Identifier, StringRef))
@@ -2736,7 +2722,7 @@ ERROR(spi_attribute_on_frozen_stored_properties,none,
 ERROR(spi_attribute_on_frozen_enum_case,none,
       "%kind0 cannot be declared '@_spi' in a '@frozen' enum",
       (const ValueDecl *))
-GROUPED_WARNING(spi_attribute_on_import_of_public_module,SPIImportIgnored,none,
+WARNING(spi_attribute_on_import_of_public_module,none,
         "'@_spi' import of %0 will not include any SPI symbols; "
         "%0 was built from the public interface at %1",
         (DeclName, StringRef))
@@ -2873,12 +2859,6 @@ WARNING(extension_retroactive_conformance,none,
 NOTE(extension_retroactive_conformance_silence,none,
      "add '@retroactive' to silence this warning", ())
 
-WARNING(extension_retroactive_conformance_unavailable,none,
-       "extension declares a conformance of imported type %0 to imported "
-       "%select{protocols|protocol}1 %2; the owners of %3 have marked "
-       "%select{these conformances|this conformance}1 as unavailable",
-       (Identifier, bool, StringRef, Identifier))
-
 // Protocols
 ERROR(type_does_not_conform,none,
       "type %0 does not conform to protocol %1", (Type, Type))
@@ -2917,17 +2897,17 @@ NOTE(add_nominal_sendable_conformance,none,
 NOTE(add_generic_parameter_conformance,none,
      "consider making generic parameter %0 conform to the %1 protocol",
      (Type, ProtocolDecl *))
-GROUPED_WARNING(add_predates_concurrency_import,AddPreconcurrencyImport,none,
+WARNING(add_predates_concurrency_import,none,
      "add '@preconcurrency' to %select{suppress|treat}0 "
      "'Sendable'-related %select{warnings|errors}0 from module %1"
      "%select{| as warnings}0", (bool, Identifier))
 GROUPED_WARNING(remove_predates_concurrency_import,PreconcurrencyImport,
                 none,
                 "'@preconcurrency' on module %0 has no effect", (Identifier))
-GROUPED_WARNING(remove_public_import,UnusedImportAccess,none,
+WARNING(remove_public_import,none,
         "public import of %0 was not used in public declarations or inlinable code",
         (Identifier))
-GROUPED_WARNING(remove_package_import,UnusedImportAccess,none,
+WARNING(remove_package_import,none,
         "package import of %0 was not used in package declarations",
         (Identifier))
 GROUPED_WARNING(public_decl_needs_sendable,ExplicitSendable,none,
@@ -3400,11 +3380,6 @@ NOTE(declared_protocol_conformance_here,none,
      "%0 implicitly conforms to protocol %2|"
      "%0 implicitly conforms to protocol %2 (via conformance to %3)}1 here",
      (Type, unsigned, Identifier, Identifier))
-NOTE(declared_protocol_unavailable_conformance_here,none,
-     "%select{%0 inherits unavailable conformance to protocol %2 from superclass|"
-     "%0 declares unavailable conformance to protocol %2|"
-     "%error|%error|%error}1 here",
-     (Type, unsigned, Identifier, Identifier))
 
 ERROR(witness_unavailable,none,
         "unavailable %kind0 was used to satisfy a requirement of protocol %1%select{|: %2}2",
@@ -3416,12 +3391,9 @@ GROUPED_WARNING(
     "protocol %1%select{|: %2}2",
     (const ValueDecl *, Identifier, StringRef))
 
-GROUPED_WARNING(
-    unavailable_sendable_conformance, UnavailableSendableConformance, none,
-    "%0 %select{was declared with|inherits}1 an unavailable 'Sendable' conformance"
-    "%select{ in %2|}1; conforming here risks data races",
-    (Type, bool, Identifier))
-
+WARNING(unavailable_conformance,none,
+        "conformance of %0 to protocol %1 is already unavailable",
+        (Type, Identifier))
 ERROR(redundant_conformance,none,
       "redundant conformance of %0 to protocol %1", (Type, Identifier))
 ERROR(redundant_conformance_conditional,none,
@@ -3938,9 +3910,7 @@ NOTE(construct_raw_representable_from_unwrapped_value,none,
       "in a property declaration marked public or in a '@frozen' or '@usableFromInline' context|" \
       "in a property declaration member of a type not marked '@_implementationOnly'|" \
       "in a property declaration member of an open class|" \
-      "in a stored property of a class without meeting the Embedded mode requirements|" \
-      "in a stored property of a class without meeting the Embedded mode requirements|" \
-      "in a stored property of a class without meeting the Embedded mode requirements|" \
+      "in a property declaration member of a class without the required '@export(interface)' deinit in Embedded|" \
       "in an associated value of a public or '@usableFromInline' enum|" \
       "in an associated value of an enum not marked '@_implementationOnly'}"
 
@@ -3988,10 +3958,9 @@ ERROR(unexportable_clang_function_type,none,
       (Type))
 
 NOTE(embedded_classes_require_export_interface_deinit,none,
-     "add a '@export(interface)' deinit to the parent class",
-     ())
-NOTE(embedded_class_property_requires_implementation_only,none,
-     "mark the stored property '@_implementationOnly'",
+     "add a '@export(interface)' deinit to the class "
+     "for properties to reference a hidden dependency. "
+     "This is a restriction in Embedded mode.",
      ())
 
 ERROR(cxx_class_instantiation_failed,none,
@@ -4013,9 +3982,6 @@ NOTE(spi_only_import_conflict_here,none,
 ERROR(error_public_import_of_private_module,none,
       "private module %0 is imported publicly from the public module %1",
       (Identifier, Identifier))
-ERROR(error_import_of_ipi_module,none,
-      "Project internal module %0 cannot be imported publicly from non-internal module %1",
-      (Identifier, Identifier))
 
 ERROR(inconsistent_implicit_access_level_on_import,none,
       "ambiguous implicit access level for import of %0; it is imported as "
@@ -4032,7 +3998,7 @@ NOTE(inconsistent_implicit_access_level_on_import_here,none,
 FIXIT(inconsistent_implicit_access_level_on_import_fixit,
      "%select{private|fileprivate|internal|package|public|%error}0 ",
      (AccessLevel))
-GROUPED_WARNING(inconsistent_import_access_levels,InconsistentImportAccess,none,
+WARNING(inconsistent_import_access_levels,none,
         "module %0 is imported as "
         "'%select{private|fileprivate|internal|package|public|%error}1' "
         "from the same file; "
@@ -5308,42 +5274,34 @@ WARNING(guard_always_succeeds,none,
         "'guard' condition is always true, body is unreachable", ())
 
 
-GROUPED_ERROR(expression_unused_closure,NoUsage,NoUsage,
+ERROR(expression_unused_closure,NoUsage,
       "closure expression is unused", ())
-GROUPED_ERROR(expression_unused_function,NoUsage,NoUsage,
+ERROR(expression_unused_function,NoUsage,
       "function is unused", ())
-GROUPED_WARNING(expression_unused_lvalue,NoUsage,NoUsage,
+WARNING(expression_unused_lvalue,NoUsage,
       "%select{"
         "variable|"
         "property is accessed but result|"
         "subscript is accessed but result"
       "}0 is unused",
       (unsigned))
-GROUPED_WARNING(expression_unused_result_call,NoUsage,NoUsage,
+WARNING(expression_unused_result_call,NoUsage,
         "result of call to %0 is unused", (const ValueDecl *))
-GROUPED_WARNING(expression_unused_throwing_unstructured_task,
-        NoUseUnstructuredThrowingTask, none,
-        "unstructured throwing task created by %0 is not used, "
-        "which may accidentally ignore errors thrown inside the task",
-        (const ValueDecl *))
-NOTE(expression_unused_throwing_unstructured_task_silence, none,
-     "to silence this warning, handle the error inside the task, or "
-     "store/discard the task value explicitly", ())
-GROUPED_WARNING(expression_unused_result_operator,NoUsage,NoUsage,
+WARNING(expression_unused_result_operator,NoUsage,
         "result of operator %0 is unused", (const ValueDecl *))
-GROUPED_WARNING(expression_unused_result_operator_name,NoUsage,NoUsage,
+WARNING(expression_unused_result_operator_name,NoUsage,
         "result of operator %0 is unused", (DeclName))
-GROUPED_WARNING(expression_unused_result_unknown, NoUsage, NoUsage,
+WARNING(expression_unused_result_unknown, NoUsage,
         "result of call to %select{function|closure}0 returning %1 is unused", (bool, Type))
-GROUPED_WARNING(expression_unused_result, NoUsage, NoUsage,
+WARNING(expression_unused_result, NoUsage,
         "expression of type %0 is unused", (Type))
-GROUPED_WARNING(expression_unused_init_result,NoUsage,NoUsage,
+WARNING(expression_unused_init_result,NoUsage,
         "result of %0 initializer is unused", (Type))
-GROUPED_WARNING(expression_unused_optional_try,NoUsage,NoUsage,
+WARNING(expression_unused_optional_try,NoUsage,
         "result of 'try?' is unused", ())
-GROUPED_WARNING(expression_unused_selector_result, NoUsage, NoUsage,
+WARNING(expression_unused_selector_result, NoUsage,
         "result of '#selector' is unused", ())
-GROUPED_WARNING(expression_unused_literal,NoUsage,NoUsage,
+WARNING(expression_unused_literal,NoUsage,
         "%0 literal is unused", (StringRef))
 
 ERROR(assignment_lhs_not_lvalue,none,
@@ -6630,7 +6588,7 @@ ERROR(unsupported_convention,none,
 ERROR(invalid_isolated_and_convention_attributes,none,
       "'@convention(%0)' attribute is not allowed on '@isolated' types",
       (StringRef))
-GROUPED_ERROR(unreferenced_generic_parameter,NoUsage,NoUsage,
+ERROR(unreferenced_generic_parameter,NoUsage,
       "generic parameter '%0' is not used in function signature", (StringRef))
 ERROR(unexpected_ctype_for_non_c_convention,none,
       "convention '%0' does not support the 'cType' argument label, did you "
@@ -7648,31 +7606,31 @@ NOTE(specialize_found_function_of_type, none,
 // MARK: Variable usage diagnostics
 //------------------------------------------------------------------------------
 
-GROUPED_WARNING(pbd_never_used_stmtcond, NoUsage, NoUsage,
+WARNING(pbd_never_used_stmtcond, NoUsage,
         "value %0 was defined but never used; consider replacing "
         "with boolean test",
         (Identifier))
-GROUPED_WARNING(unused_setter_parameter, NoUsage, NoUsage,
+WARNING(unused_setter_parameter, NoUsage,
         "setter argument %0 was never used, but the property was accessed",
         (Identifier))
 NOTE(fixit_for_unused_setter_parameter, none,
      "did you mean to use %0 instead of accessing the property's current value?", (Identifier))
 
-GROUPED_WARNING(pbd_never_used, NoUsage, NoUsage,
+WARNING(pbd_never_used, NoUsage,
         "initialization of %select{variable|immutable value}1 %0 was never used"
         "; consider replacing with assignment to '_' or removing it",
         (Identifier, unsigned))
 
 
-GROUPED_WARNING(capture_never_used, NoUsage, NoUsage,
+WARNING(capture_never_used, NoUsage,
         "capture %0 was never used",
         (Identifier))
 
-GROUPED_WARNING(variable_never_used, NoUsage, NoUsage,
+WARNING(variable_never_used, NoUsage,
         "%select{variable|immutable value}1 %0 was never used; "
         "consider replacing with '_' or removing it",
         (Identifier, unsigned))
-GROUPED_WARNING(immutable_value_never_used_but_assigned, NoUsage, NoUsage,
+WARNING(immutable_value_never_used_but_assigned, NoUsage,
         "immutable value %0 was never used; consider removing it",
         (Identifier))
 WARNING(variable_never_mutated, none,
@@ -8379,8 +8337,8 @@ ERROR(inverse_generic_but_also_conforms, none,
 ERROR(inverse_associatedtype_restriction, none,
       "cannot suppress '%0' requirement of an associated type",
       (StringRef))
-GROUPED_WARNING(legacy_suppressed_assoc_types, OldSuppressedAssociatedTypes, none,
-      "experimental feature 'SuppressedAssociatedTypes' is deprecated; see SE-503 for the official version", ())
+WARNING(legacy_suppressed_assoc_types, none,
+      "experimental feature 'SuppressedAssociatedTypes' is deprecated; see SE-0503 for the official version", ())
 ERROR(inverse_on_class, none,
       "%select{classes|actors}1 cannot be '~%0'",
       (StringRef, bool))
@@ -8633,8 +8591,8 @@ ERROR(lifetime_dependence_ctor_non_self_or_nil_return, none,
        ())
 ERROR(lifetime_dependence_cannot_be_applied_to_tuple_elt, none,
       "lifetime dependence specifiers cannot be applied to tuple elements", ())
-ERROR(lifetime_dependence_contextual_keyword_conflict_name, none,
-      "conflict between the parameter name and '%0' contextual keyword", (StringRef))
+ERROR(lifetime_dependence_immortal_conflict_name, none,
+      "conflict between the parameter name and 'immortal' contextual keyword", ())
 ERROR(lifetime_dependence_function_type, none,
       "lifetime dependencies on function types are not supported",
       ())
@@ -9048,7 +9006,7 @@ GROUPED_WARNING(isolated_conformance_will_become_nonisolated,IsolatedConformance
 GROUPED_ERROR(isolated_conformance_to_sendable_metatype,IsolatedConformances,none,
     "cannot form %0 conformance of %1 to SendableMetatype-inheriting %kind2",
     (ActorIsolation, Type, const ValueDecl *))
-GROUPED_WARNING(isolated_conformance_may_cross_isolation,IsolatedConformances,none,
+GROUPED_ERROR(isolated_conformance_may_cross_isolation,IsolatedConformances,none,
     "conformance of %select{underlying type of 'some %1'|%0}0 to protocol "
     "'%1' may be isolated and cannot be passed to %2 context",
     (Identifier, StringRef, ActorIsolation))

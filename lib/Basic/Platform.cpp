@@ -226,6 +226,7 @@ StringRef swift::getPlatformNameForTriple(const llvm::Triple &triple) {
   case llvm::Triple::DragonFly:
   case llvm::Triple::DriverKit:
   case llvm::Triple::ELFIAMCU:
+  case llvm::Triple::Emscripten:
   case llvm::Triple::Fuchsia:
   case llvm::Triple::HermitCore:
   case llvm::Triple::Hurd:
@@ -285,8 +286,6 @@ StringRef swift::getPlatformNameForTriple(const llvm::Triple &triple) {
     return "haiku";
   case llvm::Triple::WASI:
     return "wasi";
-  case llvm::Triple::Emscripten:
-    return "emscripten";
   case llvm::Triple::UnknownOS:
     return "none";
   case llvm::Triple::UEFI:
@@ -474,20 +473,15 @@ llvm::Triple swift::getTargetSpecificModuleTriple(const llvm::Triple &triple) {
 
 llvm::Triple swift::getUnversionedTriple(const llvm::Triple &triple) {
   StringRef unversionedOSName = triple.getOSName().take_until(llvm::isDigit);
-  StringRef arch = triple.getArchName();
-  if (triple.isOSOpenBSD()) {
-    arch = swift::getMajorArchitectureName(triple);
-  }
-
   if (triple.getEnvironment()) {
     StringRef environment =
         llvm::Triple::getEnvironmentTypeName(triple.getEnvironment());
 
-    return llvm::Triple(arch, triple.getVendorName(),
+    return llvm::Triple(triple.getArchName(), triple.getVendorName(),
                         unversionedOSName, environment);
   }
 
-  return llvm::Triple(arch, triple.getVendorName(),
+  return llvm::Triple(triple.getArchName(), triple.getVendorName(),
                       unversionedOSName);
 }
 

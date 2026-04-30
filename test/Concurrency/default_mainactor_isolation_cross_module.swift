@@ -105,13 +105,13 @@ extension S: Q { // Ok (no errors about conformance isolation)
 }
 
 // @MainActor
-func globalFn() {} // expected-note 2 {{calls to global function 'globalFn()' from outside of its actor context are implicitly asynchronous}}
-func takesMainActor(_: @MainActor () -> Void) {}  // expected-note {{calls to global function 'takesMainActor' from outside of its actor context are implicitly asynchronous}}
+func globalFn() {} // expected-note {{calls to global function 'globalFn()' from outside of its actor context are implicitly asynchronous}}
+func takesMainActor(_: @MainActor () -> Void) {}
 
-// Check that a member declared in an extension of nonisolated type is considered `nonisolated` isolated when declared in the same module as `S`.
+// Check that a member declared in an extension of nonisolated type is considered @MainActor isolated
 extension S { // S is nonisolated because `P` is `Sendable`.
-  func test() { // expected-note {{add '@MainActor' to make instance method 'test()' part of global actor 'MainActor'}}
-    globalFn() // expected-error {{call to main actor-isolated global function 'globalFn()' in a synchronous nonisolated context}}
+  func test() {
+    globalFn() // Ok
   }
 }
 
@@ -121,12 +121,10 @@ protocol W {
 }
 
 extension S: W {
-  func mainActorWitness() { // Ok (even though S is nonisolated new member is `@MainActor`)
-    globalFn() // Ok
-  }
+  func mainActorWitness() {} // Ok (even though S is nonisolated new member is `@MainActor`)
 
-  func testIsolation(v: S) { // expected-note {{add '@MainActor' to make instance method 'testIsolation(v:)' part of global actor 'MainActor'}}
-    takesMainActor(v.mainActorWitness) // expected-error {{call to main actor-isolated global function 'takesMainActor' in a synchronous nonisolated context}}
+  func testIsolation(v: S) {
+    takesMainActor(v.mainActorWitness) // Ok
   }
 }
 

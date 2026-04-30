@@ -123,7 +123,7 @@ public:
   bool isErased() const {
     return getKind() == Kind::Erased;
   }
-  bool isNonisolatedNonsending() const {
+  bool isNonIsolatedCaller() const {
     return getKind() == Kind::NonIsolatedNonsending;
   }
 
@@ -171,11 +171,6 @@ public:
     /// so the empty case here is "unknown".
     Unknown,
 
-    /// Inherits isolation from the caller. This is only applicable
-    /// to asynchronous function types. This corresponds to
-    /// `nonisolated(nonsending)` modifier.
-    NonisolatedNonsending,
-
     /// The isolation of the function has been statically erased.
     /// This corresponds to @isolated(any).
     Erased,
@@ -194,10 +189,6 @@ private:
 public:
   static SILFunctionTypeIsolation forUnknown() { return {Kind::Unknown}; }
 
-  static SILFunctionTypeIsolation forNonisolatedNonsending() {
-    return {Kind::NonisolatedNonsending};
-  }
-
   static SILFunctionTypeIsolation forErased() { return {Kind::Erased}; }
 
   bool operator==(const SILFunctionTypeIsolation &other) const {
@@ -206,7 +197,6 @@ public:
 
     switch (getKind()) {
     case Kind::Unknown:
-    case Kind::NonisolatedNonsending:
     case Kind::Erased:
       return true;
     }
@@ -215,9 +205,6 @@ public:
   Kind getKind() const { return value.getInt(); }
 
   bool isUnknown() const { return getKind() == Kind::Unknown; }
-  bool isNonisolatedNonsending() const {
-    return getKind() == Kind::NonisolatedNonsending;
-  }
   bool isErased() const { return getKind() == Kind::Erased; }
 
   // The opaque accessors below are just for the benefit of SILExtInfoBuilder,
@@ -228,19 +215,6 @@ public:
 
   static SILFunctionTypeIsolation fromOpaqueValues(Kind kind, CanType type) {
     return SILFunctionTypeIsolation(kind, type);
-  }
-
-  static SILFunctionTypeIsolation fromAST(FunctionTypeIsolation isolation) {
-    switch (isolation.getKind()) {
-    case FunctionTypeIsolation::Kind::NonIsolatedNonsending:
-      return forNonisolatedNonsending();
-    case FunctionTypeIsolation::Kind::Erased:
-      return forErased();
-    case FunctionTypeIsolation::Kind::NonIsolated:
-    case FunctionTypeIsolation::Kind::GlobalActor:
-    case FunctionTypeIsolation::Kind::Parameter:
-      return forUnknown();
-    }
   }
 };
 
@@ -1089,8 +1063,8 @@ class SILExtInfoBuilder {
 
   //   |representation|pseudogeneric| noescape | concurrent | async
   //   |    0 .. 4    |      5      |     6    |     7      |   8
-  //   |differentiability|unimplementable|erased isolation|nonisolated(nonsending)|
-  //   |     9 .. 11     |      12       |      13        |    14                 |
+  //   |differentiability|unimplementable|
+  //   |     9 .. 11     |      12       |
   //
   enum : unsigned {
     RepresentationMask = 0x1F << 0,
@@ -1102,8 +1076,7 @@ class SILExtInfoBuilder {
     DifferentiabilityMask = 0x7 << DifferentiabilityMaskOffset,
     UnimplementableMask = 1 << 12,
     ErasedIsolationMask = 1 << 13,
-    NonisolatedNonsendingIsolationMask = 1 << 14,
-    NumMaskBits = 15
+    NumMaskBits = 14
   };
 
   unsigned bits; // Naturally sized for speed.
@@ -1129,9 +1102,6 @@ class SILExtInfoBuilder {
            (isNoEscape ? NoEscapeMask : 0) | (isSendable ? SendableMask : 0) |
            (isAsync ? AsyncMask : 0) |
            (isUnimplementable ? UnimplementableMask : 0) |
-           (isolation.isNonisolatedNonsending()
-                ? NonisolatedNonsendingIsolationMask
-                : 0) |
            (isolation.isErased() ? ErasedIsolationMask : 0) |
            (((unsigned)diffKind << DifferentiabilityMaskOffset) &
             DifferentiabilityMask);
@@ -1162,7 +1132,9 @@ public:
       : SILExtInfoBuilder(makeBits(info.getSILRepresentation(), isPseudogeneric,
                                    info.isNoEscape(), info.isSendable(),
                                    info.isAsync(), /*unimplementable*/ false,
-                                   SILFunctionTypeIsolation::fromAST(info.getIsolation()),
+                                   info.getIsolation().isErased()
+                                       ? SILFunctionTypeIsolation::forErased()
+                                       : SILFunctionTypeIsolation::forUnknown(),
                                    info.getDifferentiabilityKind()),
                           info.getClangTypeInfo(),
                           info.getLifetimeDependencies()) {}
@@ -1206,12 +1178,6 @@ public:
     return bits & UnimplementableMask;
   }
 
-  /// Does this function type have nonisolated(nonsending) isolation
-  /// (i.e. is it the lowering of an nonisolated(nonsending) function type)?
-  constexpr bool hasNonisolatedNonsendingIsolation() const {
-    return bits & NonisolatedNonsendingIsolationMask;
-  }
-
   /// Does this function type have erased isolation (i.e. is it the
   /// lowering of an @isolated(any) function type)?
   constexpr bool hasErasedIsolation() const {
@@ -1219,11 +1185,8 @@ public:
   }
 
   SILFunctionTypeIsolation getIsolation() const {
-    if (hasNonisolatedNonsendingIsolation())
-      return SILFunctionTypeIsolation::forNonisolatedNonsending();
-    if (hasErasedIsolation())
-      return SILFunctionTypeIsolation::forErased();
-    return SILFunctionTypeIsolation::forUnknown();
+    return hasErasedIsolation() ? SILFunctionTypeIsolation::forErased()
+                                : SILFunctionTypeIsolation::forUnknown();
   }
 
   /// Get the underlying ClangTypeInfo value.
@@ -1311,14 +1274,6 @@ public:
   }
 
   [[nodiscard]]
-  SILExtInfoBuilder withNonisolatedNonsending(bool isolated = true) const {
-    return SILExtInfoBuilder(isolated
-                                 ? (bits | NonisolatedNonsendingIsolationMask)
-                                 : (bits & ~NonisolatedNonsendingIsolationMask),
-                             clangTypeInfo, lifetimeDependencies);
-  }
-
-  [[nodiscard]]
   SILExtInfoBuilder withErasedIsolation(bool erased = true) const {
     return SILExtInfoBuilder(erased ? (bits | ErasedIsolationMask)
                                     : (bits & ~ErasedIsolationMask),
@@ -1329,8 +1284,6 @@ public:
     switch (isolation.getKind()) {
     case SILFunctionTypeIsolation::Unknown:
       return *this;
-    case SILFunctionTypeIsolation::NonisolatedNonsending:
-      return withNonisolatedNonsending(true);
     case SILFunctionTypeIsolation::Erased:
       return withErasedIsolation(true);
     }
@@ -1452,9 +1405,6 @@ public:
     return builder.isUnimplementable();
   }
 
-  constexpr bool hasNonisolatedNonsendingIsolation() const {
-    return builder.hasNonisolatedNonsendingIsolation();
-  }
   constexpr bool hasErasedIsolation() const {
     return builder.hasErasedIsolation();
   }
@@ -1498,10 +1448,6 @@ public:
 
   SILExtInfo withAsync(bool isAsync = true) const {
     return builder.withAsync(isAsync).build();
-  }
-
-  SILExtInfo withNonisolatedNonsendingIsolation(bool isolation = true) const {
-    return builder.withNonisolatedNonsending(isolation).build();
   }
 
   SILExtInfo withErasedIsolation(bool erased = true) const {

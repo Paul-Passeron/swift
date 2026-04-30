@@ -1227,7 +1227,7 @@ namespace {
         return ActorIsolation::forGlobalActor(
             thunkTy->getIsolation().getGlobalActorType());
       case FunctionTypeIsolation::Kind::NonIsolatedNonsending:
-        return ActorIsolation::forNonisolatedNonsending();
+        return ActorIsolation::forCallerIsolationInheriting();
       }
     }
 
@@ -1468,7 +1468,7 @@ namespace {
         // 2. There is a strong invariant in the compiler today that caller
         // isolation inheriting is always async. By using nonisolated here, we
         // avoid breaking that invariant.
-        if (!outerThunkTy->isAsync() && f->isNonisolatedNonsending())
+        if (!outerThunkTy->isAsync() && f->isCallerIsolationInheriting())
           return {};
         return f;
       }();

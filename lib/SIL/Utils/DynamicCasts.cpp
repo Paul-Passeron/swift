@@ -901,12 +901,12 @@ bool swift::matchesActorIsolation(ProtocolConformanceRef conformance, SILFunctio
       return false;
 
     ActorIsolation isolation = isolatedConf.getConcrete()->getIsolation();
-    if (isolation.isNonisolatedOrConcurrent())
+    if (isolation.isNonisolated())
       return false;
 
     if (isolation.isGlobalActor()) {
       if (auto functionIsolation = inFunction->getActorIsolation()) {
-        if (isolation == functionIsolation)
+        if (isolation == functionIsolation.value())
           return false;
       }
     }
@@ -1133,8 +1133,10 @@ namespace {
         AllocStackInst *sourceTemp = nullptr;
         Source objectSource;
         if (source.isAddress()) {
+          // TODO: add an instruction for non-destructively getting a
+          // specific element's data.
           SILValue sourceAddr = source.Value;
-          sourceAddr = B.createUncheckedInPlaceEnumDataAddr(Loc, sourceAddr,
+          sourceAddr = B.createUncheckedTakeEnumDataAddr(Loc, sourceAddr,
                                     sourceSomeDecl, loweredSourceObjectType);
           objectSource = Source(sourceAddr, sourceObjectType);
         } else {

@@ -826,7 +826,7 @@ ClosureSpecCloner::initCloned(SILOptFunctionBuilder &FunctionBuilder,
       // classes (the classSubclassScope), because that may incorrectly
       // influence the linkage.
       getSpecializedLinkage(ClosureUser, ClosureUser->getLinkage()), ClonedName,
-      ClonedTy, ActorIsolation::forUnspecified(), ClosureUserClosureUser->getGenericEnvironment(),
+      ClonedTy, ClosureUser->getGenericEnvironment(),
       ClosureUser->getLocation(), IsBare, ClosureUser->isTransparent(),
       CallSiteDesc.getSerializedKind(), IsNotDynamic, IsNotDistributed,
       IsNotRuntimeAccessible, ClosureUser->getEntryCount(),

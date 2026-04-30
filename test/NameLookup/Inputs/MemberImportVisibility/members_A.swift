@@ -68,7 +68,6 @@ public enum EnumInA {
 open class BaseClassInA {
   open func methodInA() {}
   open func overriddenMethod() {}
-  open func overriddenInBMethod() {}
 }
 
 public protocol ProtocolInA {
@@ -79,16 +78,6 @@ public protocol ProtocolInA {
 
 extension ProtocolInA {
   public func defaultedRequirementInA() { }
-}
-
-public protocol ProtocolWithAssociatedTypesInA {
-  associatedtype WitnessedInA
-  associatedtype WitnessedInB
-  associatedtype WitnessedInC
-}
-
-public struct StructWithWitnessesForProtocolWithAssociatedTypesInA {
-  public struct WitnessedInA { }
 }
 
 public struct EquatableInA: Equatable {

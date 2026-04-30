@@ -2342,12 +2342,13 @@ private:
       // If our instruction does not have any isolation info associated with it,
       // it must be nonisolated. See if our function has a matching isolation to
       // our sent operand. If so, we can squelch this.
-      auto functionIsolation =
-          sentOp->getUser()->getFunction()->getActorIsolation();
-      if (functionIsolation.isActorIsolated() &&
-          SILIsolationInfo::get(sentOp->getUser())
-              .hasSameIsolation(functionIsolation))
-        return;
+      if (auto functionIsolation =
+              sentOp->getUser()->getFunction()->getActorIsolation()) {
+        if (functionIsolation->isActorIsolated() &&
+            SILIsolationInfo::get(sentOp->getUser())
+                .hasSameIsolation(*functionIsolation))
+          return;
+      }
     }
 
     // Ok, we actually need to emit a call to the callback.

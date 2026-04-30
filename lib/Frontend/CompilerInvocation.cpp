@@ -161,7 +161,7 @@ void CompilerInvocation::setDefaultBlocklistsIfNecessary() {
     for (llvm::sys::fs::directory_iterator F(blocklistDir, EC), FE;
          F != FE; F.increment(EC)) {
       StringRef ext = llvm::sys::path::extension(F->path());
-      if (ext.ends_with(".yml") || ext.ends_with(".yaml")) {
+      if (ext == "yml" || ext == "yaml") {
         LangOpts.BlocklistConfigFilePaths.push_back(F->path());
       }
     }
@@ -419,9 +419,6 @@ void CompilerInvocation::computeAArch64TBIOptions() {
 }
 
 void CompilerInvocation::computeCXXStdlibOptions() {
-  if (!LangOpts.EnableCXXInterop)
-    return;
-
   // The MSVC driver in Clang is not aware of the C++ stdlib, and currently
   // always assumes libstdc++, which is incorrect: the Microsoft stdlib is
   // normally used.
@@ -885,6 +882,7 @@ static bool ParseEnabledFeatureArgs(LangOptions &Opts, ArgList &Args,
   // honored, we iterate over them in reverse order.
   std::vector<StringRef> psuedoFeatures;
   llvm::SmallSet<Feature, 8> seenFeatures;
+  bool shouldEnableEmbeddedExistentialsPerDefault = false;
   for (const Arg *A : Args.filtered_reverse(
            OPT_enable_experimental_feature, OPT_disable_experimental_feature,
            OPT_enable_upcoming_feature, OPT_disable_upcoming_feature)) {
@@ -1000,6 +998,21 @@ static bool ParseEnabledFeatureArgs(LangOptions &Opts, ArgList &Args,
     if (!seenFeatures.insert(*feature).second)
       continue;
 
+    // "Embedded" enables "EmbeddedExistentials" per default except if
+    // EmbeddedExistentials is explicitly disabled.
+    // "Embedded" enables "EmbeddedExistentials" if we have not yet seen
+    // explicit feature handling of "EmbeddedExistentials".
+    // Because we can see "Embedded" before (parsing in reverse) we see explict
+    // disabling of "EmbeddedExistentials" we delay default enablement so that a
+    // later (when viewed in reverse as this loop's logic does) explicit
+    // disablement can take place.
+    if (*feature == Feature::Embedded &&
+        isEnableFeatureFlag &&
+        !seenFeatures.contains(Feature::EmbeddedExistentials))
+      shouldEnableEmbeddedExistentialsPerDefault = true;
+    else if (*feature == Feature::EmbeddedExistentials && !isEnableFeatureFlag)
+      shouldEnableEmbeddedExistentialsPerDefault = false;
+
     bool forMigration = featureMode.has_value();
 
     // Enable the feature if requested.
@@ -1055,6 +1068,10 @@ static bool ParseEnabledFeatureArgs(LangOptions &Opts, ArgList &Args,
       auto modules = featureName->split("=").second;
       modules.split(Opts.ModulesRequiringObjC, ",");
     }
+  }
+
+  if (shouldEnableEmbeddedExistentialsPerDefault) {
+    Opts.enableFeature(Feature::EmbeddedExistentials);
   }
 
   // Map historical flags over to experimental features. We do this for all
@@ -1366,11 +1383,11 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
   if (ParseEnabledFeatureArgs(Opts, Args, Diags, FrontendOpts))
     HadError = true;
 
-  // SuppressedAssociatedTypesWithDefaults is now always-on by default.
-  // If the old prototype version of the feature has been requested, honor it.
+  // Do not allow both versions of SuppressedAssociatedTypes at the same time.
+  // Pick the version with defaults if both are specified.
   if (Opts.hasFeature(SuppressedAssociatedTypes) &&
       Opts.hasFeature(SuppressedAssociatedTypesWithDefaults)) {
-    Opts.disableFeature(SuppressedAssociatedTypesWithDefaults);
+    Opts.disableFeature(SuppressedAssociatedTypes);
   }
 
   Opts.EnableAppExtensionLibraryRestrictions |= Args.hasArg(OPT_enable_app_extension_library);
@@ -1887,6 +1904,11 @@ static bool ParseLangArgs(LangOptions &Opts, ArgList &Args,
   }
   Opts.BypassResilienceChecks |= Args.hasArg(OPT_bypass_resilience);
 
+  if (Opts.hasFeature(Feature::EmbeddedExistentials) &&
+      !Opts.hasFeature(Feature::Embedded)) {
+      Diags.diagnose(SourceLoc(), diag::embedded_existentials_without_embedded);
+      HadError = true;
+  }
   if (Opts.hasFeature(Feature::Embedded)) {
     Opts.UnavailableDeclOptimizationMode = UnavailableDeclOptimization::Complete;
     Opts.DisableImplicitStringProcessingModuleImport = true;
@@ -2220,15 +2242,6 @@ static bool ParseClangImporterArgs(ClangImporterOptions &Opts, ArgList &Args,
 
   if (const Arg *A = Args.getLastArg(OPT_index_store_path))
     Opts.IndexStorePath = A->getValue();
-
-  // Forward -sysroot as --sysroot= so the Clang driver sets D.SysRoot, which
-  // toolchain helpers (AddClangSystemIncludeArgs, etc.) use to locate system
-  // headers. Skipped in -direct-clang-cc1-module-build mode where ExtraArgs
-  // are parsed directly as CC1 args and --sysroot= is driver-only.
-  if (!Args.hasArg(OPT_direct_clang_cc1_module_build)) {
-    if (const Arg *A = Args.getLastArg(OPT_sysroot))
-      Opts.ExtraArgs.push_back("--sysroot=" + std::string(A->getValue()));
-  }
 
   for (const Arg *A : Args.filtered(OPT_Xcc)) {
     StringRef clangArg = A->getValue();
@@ -2600,8 +2613,7 @@ static bool ParseSearchPathArgs(SearchPathOptions &Opts, ArgList &Args,
     Opts.CandidateCompiledModules.push_back(resolveSearchPath(A->getValue()));
   }
 
-  if (const Arg *A = Args.getLastArg(OPT_const_gather_protocols_file,
-                                     OPT_const_gather_protocols_list))
+  if (const Arg *A = Args.getLastArg(OPT_const_gather_protocols_file))
     Opts.ConstGatherProtocolListFilePath = A->getValue();
 
   for (auto A : Args.getAllArgValues(options::OPT_serialized_path_obfuscate)) {

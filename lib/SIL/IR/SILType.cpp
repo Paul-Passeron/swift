@@ -975,30 +975,30 @@ TypeBase::replaceSubstitutedSILFunctionTypesWithUnsubstituted(SILModule &M) cons
           ->replaceSubstitutedSILFunctionTypesWithUnsubstituted(M)
           ->getCanonicalType();
         didChange |= param.getInterfaceType() != newParamTy;
-        newParams.push_back(param.getWithInterfaceType(newParamTy));
+        newParams.push_back(SILParameterInfo(newParamTy, param.getConvention()));
       }
       for (auto yield : sft->getYields()) {
         auto newYieldTy = yield.getInterfaceType()
           ->replaceSubstitutedSILFunctionTypesWithUnsubstituted(M)
           ->getCanonicalType();
         didChange |= yield.getInterfaceType() != newYieldTy;
-        newYields.push_back(yield.getWithInterfaceType(newYieldTy));
+        newYields.push_back(SILYieldInfo(newYieldTy, yield.getConvention()));
       }
       for (auto result : sft->getResults()) {
         auto newResultTy = result.getInterfaceType()
           ->replaceSubstitutedSILFunctionTypesWithUnsubstituted(M)
           ->getCanonicalType();
         didChange |= result.getInterfaceType() != newResultTy;
-        newResults.push_back(result.getWithInterfaceType(newResultTy));
+        newResults.push_back(SILResultInfo(newResultTy, result.getConvention()));
       }
       if (auto error = sft->getOptionalErrorResult()) {
         auto newErrorTy = error->getInterfaceType()
           ->replaceSubstitutedSILFunctionTypesWithUnsubstituted(M)
           ->getCanonicalType();
         didChange |= error->getInterfaceType() != newErrorTy;
-        newErrorResult = error->getWithInterfaceType(newErrorTy);
+        newErrorResult = SILResultInfo(newErrorTy, error->getConvention());
       }
-
+      
       if (!didChange)
         return sft;
       

@@ -387,7 +387,6 @@ bool NodePrinter::isSimpleType(NodePointer Node) {
   case Node::Kind::ImplDifferentiabilityKind:
   case Node::Kind::ImplEscaping:
   case Node::Kind::ImplErasedIsolation:
-  case Node::Kind::ImplNonisolatedNonsendingIsolation:
   case Node::Kind::ImplSendingResult:
   case Node::Kind::ImplConvention:
   case Node::Kind::ImplParameterResultDifferentiability:
@@ -2892,9 +2891,6 @@ NodePointer NodePrinter::print(NodePointer Node, unsigned depth,
     return nullptr;
   case Node::Kind::ImplEscaping:
     Printer << "@escaping";
-    return nullptr;
-  case Node::Kind::ImplNonisolatedNonsendingIsolation:
-    Printer << "@caller_isolated";
     return nullptr;
   case Node::Kind::ImplErasedIsolation:
     Printer << "@isolated(any)";

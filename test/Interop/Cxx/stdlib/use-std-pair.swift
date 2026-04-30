@@ -6,6 +6,8 @@
 // RUN: %target-run-simple-swift(-I %S/Inputs -cxx-interoperability-mode=upcoming-swift -Xcc -std=c++20)
 
 // REQUIRES: executable_test
+// FIXME importing a move-only std::pair into Swift causes a crash in the MoveOnlyChecker, in Linux
+// REQUIRES: OS=macosx || OS=windows-msvc
 
 import StdlibUnittest
 import StdPair
@@ -14,7 +16,7 @@ import Cxx
 
 var StdPairTestSuite = TestSuite("StdPair")
 
-func takePair<T: CxxPair & ~Copyable>(_ _: consuming T) where T.First: ~Copyable, T.Second: ~Copyable { }
+func takePair<T: CxxPair & ~Copyable>(_ _: consuming T) { }
 
 StdPairTestSuite.test("StdPairInts.init") {
   let pi = PairInts(first: 1, second: 2)

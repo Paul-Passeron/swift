@@ -993,10 +993,10 @@ LoadedFile *SerializedModuleLoaderBase::loadAST(
       M.setIsConcurrencyChecked();
     if (loadedModuleFile->strictMemorySafety())
       M.setStrictMemorySafety();
-    M.setCodeGenerationModel(loadedModuleFile->codeGenerationModel());
+    if (loadedModuleFile->deferredCodeGen())
+      M.setDeferredCodeGen();
     if (loadedModuleFile->isAggressiveCMOEnabled())
       M.setAggressiveCMOEnabled();
-    M.setStoredLibraryLevel(loadedModuleFile->getLibraryLevel());
     if (loadedModuleFile->hasCxxInteroperability()) {
       M.setHasCxxInteroperability();
       M.setCXXStdlibKind(loadedModuleFile->getCXXStdlibKind());

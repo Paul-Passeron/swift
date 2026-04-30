@@ -614,7 +614,6 @@ struct CustomRefCountingOperationResult {
     immortal,
     notFound,
     tooManyFound,
-    unreachable,
     foundOperation
   };
 

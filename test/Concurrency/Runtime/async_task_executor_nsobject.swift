@@ -15,7 +15,6 @@
 import Dispatch
 import StdlibUnittest
 import _Concurrency
-@_spi(ExperimentalScheduling) import _Concurrency
 
 import Foundation
 import Darwin

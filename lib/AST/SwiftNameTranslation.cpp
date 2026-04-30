@@ -343,9 +343,7 @@ swift::cxx_translation::getDeclRepresentation(
       return {Unsupported, UnrepresentableProtocol};
     }
     // Swift's consume semantics are not yet supported in C++.
-    // However, non-copyable types imported from C/C++ can be exposed back,
-    // as C++ already knows how to handle them.
-    if (!typeDecl->canBeCopyable() && !typeDecl->hasClangNode())
+    if (!typeDecl->canBeCopyable())
       return {Unsupported, UnrepresentableMoveOnly};
     if (isa<ClassDecl>(VD) && VD->isObjC())
       return {Unsupported, UnrepresentableObjC};

@@ -444,7 +444,6 @@ instantiateTemplatedOperator(ClangImporter::Implementation &impl,
       auto lookupTable2 = impl.findLookupTable(owningModule);
       if (lookupTable1 != lookupTable2)
         addEntryToLookupTable(*lookupTable2, clangCallee, impl.getNameImporter());
-      impl.synthesizedAndAlwaysVisibleDecls.insert(clangCallee);
       return clangCallee;
     }
     break;
@@ -977,7 +976,7 @@ static void conformToCxxOptional(ClangImporter::Implementation &impl,
   auto fakeValueRefExpr = new (clangCtx) clang::DeclRefExpr(
       clangCtx, fakeValueVarDecl, false,
       constRefValueType.getNonReferenceType(), clang::ExprValueKind::VK_LValue,
-      clangDecl->getLocation());
+      clang::SourceLocation());
 
   auto clangDeclTyInfo = clangCtx.getTrivialTypeSourceInfo(
       clang::QualType(clangDecl->getTypeForDecl(), 0));

@@ -504,10 +504,7 @@ _buildDemanglingForExtendedExistential(const Metadata *type,
                                               ee->getGeneralizationArguments());
 
   // Dig out the requirement list.
-  auto constrainedExistential = demangledExistential;
-  while (constrainedExistential->getKind() == Node::Kind::Type
-         || constrainedExistential->getKind() == Node::Kind::ExistentialMetatype)
-    constrainedExistential = constrainedExistential->getFirstChild();
+  auto constrainedExistential = demangledExistential->getChild(0);
   assert(constrainedExistential->getKind() == Node::Kind::ConstrainedExistential);
   auto reqList = constrainedExistential->getChild(1);
   assert(reqList->getKind() == Node::Kind::ConstrainedExistentialRequirementList);
@@ -827,7 +824,7 @@ swift::_swift_buildDemanglingForMetadata(const Metadata *type,
     } else if (func->getExtendedFlags().isIsolatedAny()) {
       funcNode->addChild(Dem.createNode(
           Node::Kind::IsolatedAnyFunctionType), Dem);
-    } else if (func->getExtendedFlags().isNonisolatedNonsending()) {
+    } else if (func->getExtendedFlags().isNonIsolatedCaller()) {
       funcNode->addChild(Dem.createNode(
         Node::Kind::NonIsolatedCallerFunctionType), Dem);
     }
