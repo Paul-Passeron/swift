@@ -45,12 +45,14 @@ MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
 SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived,
                                        ValueDecl *requirement);
 
-ValueDecl *handleDerivedNode(DerivedConformance &der, ASTContext &ctx, ASTNode node);
+ValueDecl *handleDerivedNode(DerivedConformance &der, ASTContext &ctx,
+                             ASTNode node);
 
 MacroExpansionDecl *createMacroExpansionForConformanceDerivation(
     DerivedConformance &der, ValueDecl *requirement, StringRef code);
 
-ValueDecl *deriveRequirementViaMacro( DerivedConformance &der, ValueDecl *requirement, StringRef code);
+ValueDecl *deriveRequirementViaMacro(DerivedConformance &der,
+                                     ValueDecl *requirement, StringRef code);
 
 // ASTGen
 extern "C" bool swift_Macros_expandFreestandingMacroSynthetic(
@@ -58,6 +60,7 @@ extern "C" bool swift_Macros_expandFreestandingMacroSynthetic(
     uint8_t rawMacroRole, BridgedStringRef macroNameText,
     BridgedStringRef argumentListText, BridgedStringRef *expandedSourceOutPtr);
 
+bool isMacroDerivationEnabled(const ASTContext &C);
 
 } // namespace swift
 

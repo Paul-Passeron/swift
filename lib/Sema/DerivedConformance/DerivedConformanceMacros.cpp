@@ -142,7 +142,11 @@ ValueDecl *swift::handleDerivedNode(DerivedConformance &der, ASTContext &ctx,
 
   if (auto fdecl = dyn_cast<AbstractFunctionDecl>(decl)) {
     addNonIsolatedToSynthesized(der, fdecl);
-    fdecl->getMacroExpandedBody();
+    // TODO: figure out why this line is needed,
+    // the body should be expanded as needed
+    // but this creates linking errors in some cases
+    // (the stdlib build, not easy to reproduce)
+    (void)fdecl->getMacroExpandedBody();
   }
   if (auto *vdecl = dyn_cast<VarDecl>(decl)) {
     vdecl->setImplInfo(StorageImplInfo::getImmutableComputed());
@@ -193,3 +197,6 @@ ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &der,
   });
   return val;
 }
+
+bool swift::isMacroDerivationEnabled(const ASTContext &C) {
+  return C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros);

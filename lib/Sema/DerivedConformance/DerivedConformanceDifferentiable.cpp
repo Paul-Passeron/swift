@@ -17,6 +17,7 @@
 
 #include "CodeSynthesis.h"
 #include "DerivedConformance.h"
+#include "DerivedConformance/DerivedConformanceMacros.h"
 #include "TypeCheckType.h"
 #include "TypeChecker.h"
 #include "swift/AST/AutoDiff.h"
@@ -33,6 +34,7 @@
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Support/ErrorHandling.h"
 
 using namespace swift;
 
@@ -42,8 +44,9 @@ using namespace swift;
 /// If the given property is a `var`, return true because `move(by:)` can be
 /// invoked regardless.  Otherwise, return true if and only if the property's
 /// type's 'Differentiable.move(by:)' witness is non-mutating.
-static bool canInvokeMoveByOnProperty(
-    VarDecl *vd, ProtocolConformanceRef diffableConformance) {
+static bool
+canInvokeMoveByOnProperty(VarDecl *vd,
+                          ProtocolConformanceRef diffableConformance) {
   assert(diffableConformance && "Property must conform to 'Differentiable'");
   // `var` always supports `move(by:)` since it is mutable.
   if (vd->getIntroducer() == VarDecl::Introducer::Var)
@@ -51,8 +54,8 @@ static bool canInvokeMoveByOnProperty(
   // When the property is a `let`, the only case that would be supported is when
   // it has a `move(by:)` protocol requirement witness that is non-mutating.
   auto &C = vd->getASTContext();
-  auto witness = diffableConformance.getWitnessByName(
-      DeclName(C, C.Id_move, {C.Id_by}));
+  auto witness =
+      diffableConformance.getWitnessByName(DeclName(C, C.Id_move, {C.Id_by}));
   if (!witness)
     return false;
   auto *decl = cast<FuncDecl>(witness.getDecl());
@@ -61,8 +64,7 @@ static bool canInvokeMoveByOnProperty(
 
 /// Get the stored properties of a nominal type that are relevant for
 /// differentiation, except the ones tagged `@noDerivative`.
-static void
-getStoredPropertiesForDifferentiation(
+static void getStoredPropertiesForDifferentiation(
     NominalTypeDecl *nominal, DeclContext *DC,
     SmallVectorImpl<VarDecl *> &result,
     bool includeLetPropertiesWithNonmutatingMoveBy = false) {
@@ -90,7 +92,7 @@ getStoredPropertiesForDifferentiation(
     // Skip `let` stored properties with a mutating `move(by:)` if requested.
     // `mutating func move(by:)` cannot be synthesized to update `let`
     // properties.
-    if (!includeLetPropertiesWithNonmutatingMoveBy && 
+    if (!includeLetPropertiesWithNonmutatingMoveBy &&
         !canInvokeMoveByOnProperty(vd, conformance))
       continue;
     result.push_back(vd);
@@ -209,7 +211,7 @@ bool DerivedConformance::canDeriveDifferentiable(NominalTypeDecl *nominal,
     if (v->getInterfaceType()->hasError())
       return false;
     auto varType = DC->mapTypeIntoEnvironment(v->getValueInterfaceType());
-    return (bool) checkConformance(varType, diffableProto);
+    return (bool)checkConformance(varType, diffableProto);
   });
 }
 
@@ -331,45 +333,32 @@ static ValueDecl *deriveDifferentiable_move(DerivedConformance &derived) {
   auto *parentDC = derived.getConformanceContext();
   auto tangentType =
       getTangentVectorInterfaceType(parentDC->getSelfTypeInContext(), parentDC);
-  return deriveDifferentiable_method(
-      derived, C.Id_move, C.Id_by, C.Id_offset, tangentType,
-      C.TheEmptyTupleType, {deriveBodyDifferentiable_move, nullptr});
+  return deriveDifferentiable_method(derived, C.Id_move, C.Id_by, C.Id_offset,
+                                     tangentType, C.TheEmptyTupleType,
+                                     {deriveBodyDifferentiable_move, nullptr});
 }
 
-/// Return associated `TangentVector` struct for a nominal type, if it exists.
-/// If not, synthesize the struct.
 static StructDecl *
-getOrSynthesizeTangentVectorStruct(DerivedConformance &derived, Identifier id) {
+synthesizeTangentVectorStructDecl(DerivedConformance &derived) {
   auto *parentDC = derived.getConformanceContext();
   auto *nominal = derived.Nominal;
   auto &C = nominal->getASTContext();
 
-  // If the associated struct already exists, return it.
-  auto lookup = nominal->lookupDirect(C.Id_TangentVector);
-  assert(lookup.size() < 2 &&
-         "Expected at most one associated type named `TangentVector`");
-  if (lookup.size() == 1) {
-    auto *structDecl = convertToStructDecl(lookup.front());
-    assert(structDecl && "Expected lookup result to be a struct");
-    return structDecl;
-  }
-
-  // Otherwise, synthesize a new struct.
-
-  // Compute `tvDesiredProtos`, the set of protocols that the new `TangentVector` struct must
-  // inherit, by collecting all the `TangentVector` conformance requirements imposed by the
-  // protocols that `derived.ConformanceDecl` inherits.
+  // Compute `tvDesiredProtos`, the set of protocols that the new
+  // `TangentVector` struct must inherit, by collecting all the `TangentVector`
+  // conformance requirements imposed by the protocols that
+  // `derived.ConformanceDecl` inherits.
   //
-  // Note that, for example, this will always find `AdditiveArithmetic` and `Differentiable` because
-  // the `Differentiable` protocol itself requires that its `TangentVector` conforms to
-  // `AdditiveArithmetic` and `Differentiable`.
+  // Note that, for example, this will always find `AdditiveArithmetic` and
+  // `Differentiable` because the `Differentiable` protocol itself requires that
+  // its `TangentVector` conforms to `AdditiveArithmetic` and `Differentiable`.
   llvm::SmallSetVector<ProtocolDecl *, 4> tvDesiredProtos;
 
   auto *diffableProto = C.getProtocol(KnownProtocolKind::Differentiable);
   auto *tvAssocType = diffableProto->getAssociatedType(C.Id_TangentVector);
 
-  auto localProtos = cast<IterableDeclContext>(derived.ConformanceDecl)
-      ->getLocalProtocols();
+  auto localProtos =
+      cast<IterableDeclContext>(derived.ConformanceDecl)->getLocalProtocols();
   for (auto proto : localProtos) {
     for (auto req : proto->getRequirementSignature().getRequirements()) {
       if (req.getKind() != RequirementKind::Conformance)
@@ -380,14 +369,20 @@ getOrSynthesizeTangentVectorStruct(DerivedConformance &derived, Identifier id) {
       tvDesiredProtos.insert(req.getProtocolDecl());
     }
   }
+
   SmallVector<InheritedEntry, 4> tvDesiredProtoInherited;
   for (auto *p : tvDesiredProtos)
     tvDesiredProtoInherited.push_back(
-      InheritedEntry(TypeLoc::withoutLoc(p->getDeclaredInterfaceType())));
+        InheritedEntry(TypeLoc::withoutLoc(p->getDeclaredInterfaceType())));
 
   // Cache original members and their associated types for later use.
   SmallVector<VarDecl *, 8> diffProperties;
   getStoredPropertiesForDifferentiation(nominal, parentDC, diffProperties);
+
+  if (isMacroDerivationEnabled(C)) {
+    //TODO: Implement the synthesis of TangentVector type via macro
+    llvm_unreachable("TODO");
+  }
 
   auto synthesizedLoc = derived.ConformanceDecl->getEndLoc();
   auto *structDecl =
@@ -403,9 +398,9 @@ getOrSynthesizeTangentVectorStruct(DerivedConformance &derived, Identifier id) {
   for (auto *member : diffProperties) {
     // Add a tangent stored property to the `TangentVector` struct, with the
     // name and `TangentVector` type of the original property.
-    auto *tangentProperty = new (C) VarDecl(
-        member->isStatic(), member->getIntroducer(),
-        /*NameLoc*/ SourceLoc(), member->getName(), structDecl);
+    auto *tangentProperty =
+        new (C) VarDecl(member->isStatic(), member->getIntroducer(),
+                        /*NameLoc*/ SourceLoc(), member->getName(), structDecl);
     // Note: `tangentProperty` is not marked as implicit or synthesized here,
     // because that incorrectly affects memberwise initializer synthesis and
     // causes the type checker to not guarantee the order of these members.
@@ -465,21 +460,53 @@ getOrSynthesizeTangentVectorStruct(DerivedConformance &derived, Identifier id) {
     }
   }
 
+  return structDecl;
+}
+
+/// Return associated `TangentVector` struct for a nominal type, if it exists.
+/// If not, synthesize the struct.
+static StructDecl *
+getOrSynthesizeTangentVectorStruct(DerivedConformance &derived, Identifier id) {
+  auto *nominal = derived.Nominal;
+  auto &C = nominal->getASTContext();
+
+  // If the associated struct already exists, return it.
+  auto lookup = nominal->lookupDirect(C.Id_TangentVector);
+  assert(lookup.size() < 2 &&
+         "Expected at most one associated type named `TangentVector`");
+  if (lookup.size() == 1) {
+    auto *structDecl = convertToStructDecl(lookup.front());
+    assert(structDecl && "Expected lookup result to be a struct");
+    return structDecl;
+  }
+
+  // Otherwise, synthesize a new struct.
+
+  auto *structDecl = synthesizeTangentVectorStructDecl(derived);
+
   // If nominal type is `@frozen`, also mark `TangentVector` struct.
   if (nominal->getAttrs().hasAttribute<FrozenAttr>())
     structDecl->addAttribute(new (C) FrozenAttr(/*implicit*/ true));
 
-  // Add `typealias TangentVector = Self` so that the `TangentVector` itself
-  // won't need its own conformance derivation.
-  auto *tangentEqualsSelfAlias = new (C) TypeAliasDecl(
-      SourceLoc(), SourceLoc(), C.Id_TangentVector, SourceLoc(),
-      /*GenericParams*/ nullptr, structDecl);
-  tangentEqualsSelfAlias->setUnderlyingType(structDecl->getDeclaredInterfaceType());
-  tangentEqualsSelfAlias->copyFormalAccessFrom(structDecl,
-                                               /*sourceIsParentContext*/ true);
-  tangentEqualsSelfAlias->setImplicit();
-  tangentEqualsSelfAlias->setSynthesized();
-  structDecl->addMember(tangentEqualsSelfAlias);
+  TypeAliasDecl *tangentEqualsSelfAlias;
+  if (!isMacroDerivationEnabled(C)) {
+    // The macro derivation provides `typealias TangentVector = Self`, so add it
+    // when macro derivation is disabled
+
+    // Add `typealias TangentVector = Self` so that the `TangentVector` itself
+    // won't need its own conformance derivation.
+    tangentEqualsSelfAlias = new (C)
+        TypeAliasDecl(SourceLoc(), SourceLoc(), C.Id_TangentVector, SourceLoc(),
+                      /*GenericParams*/ nullptr, structDecl);
+    tangentEqualsSelfAlias->setUnderlyingType(
+        structDecl->getDeclaredInterfaceType());
+    tangentEqualsSelfAlias->copyFormalAccessFrom(
+        structDecl,
+        /*sourceIsParentContext*/ true);
+    tangentEqualsSelfAlias->setImplicit();
+    tangentEqualsSelfAlias->setSynthesized();
+    structDecl->addMember(tangentEqualsSelfAlias);
+  }
 
   // The implicit memberwise constructor must be explicitly created so that it
   // can called in `AdditiveArithmetic` and `Differentiable` methods. Normally,
@@ -553,7 +580,7 @@ static void checkAndDiagnoseImplicitNoDerivative(ASTContext &Context,
     auto varType = DC->mapTypeIntoEnvironment(vd->getValueInterfaceType());
     auto diffableConformance = checkConformance(varType, diffableProto);
     // If stored property should not be diagnosed, continue.
-    if (diffableConformance && 
+    if (diffableConformance &&
         canInvokeMoveByOnProperty(vd, diffableConformance))
       continue;
     // Otherwise, add an implicit `@noDerivative` attribute.
@@ -597,10 +624,9 @@ getOrSynthesizeTangentVectorStructType(DerivedConformance &derived) {
   checkAndDiagnoseImplicitNoDerivative(C, nominal, parentDC);
 
   // Return the `TangentVector` struct type.
-  return std::make_pair(
-    parentDC->mapTypeIntoEnvironment(
-      tangentStruct->getDeclaredInterfaceType()),
-    tangentStruct);
+  return std::make_pair(parentDC->mapTypeIntoEnvironment(
+                            tangentStruct->getDeclaredInterfaceType()),
+                        tangentStruct);
 }
 
 /// Synthesize the `TangentVector` struct type.
