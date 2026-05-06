@@ -326,36 +326,14 @@ static ValueDecl *deriveAdditiveArithmeticViaMacro(DerivedConformance &der,
   std::string code = "#deriveAdditiveArithmetic(\"";
   code += requirement->getBaseName().getIdentifier().str();
   code += "\", [";
-
-  bool first = true;
   for (const auto &storedProperty : nominalDecl->getStoredProperties()) {
-    if (!first) code += ", ";
-    first = false;
     code += "\"";
     code += storedProperty->getNameStr();
-    code += "\"";
+    code += "\", ";
   }
   code += "])";
-
-  auto *parentDc = der.getConformanceContext();
-  auto &ctx = parentDc->getASTContext();
-  auto atLoc = getValidSourceLocForImplicit(der, requirement);
-  auto bufferID =
-      registerSynthesizedMacroBuffer(ctx, code, parentDc, atLoc, der);
-  auto *free = parseSynthesizedMacroDecl(ctx, requirement->getModuleContext(),
-                                         bufferID, parentDc);
-  auto *eInfo = free->getExpansionInfo();
-  eInfo->SigilLoc = atLoc;
-  eInfo->MacroNameLoc = DeclNameLoc(atLoc);
-  der.addMemberToConformanceContext(free, nullptr);
-  ValueDecl *val = nullptr;
-  free->forEachExpandedNode([&](ASTNode node) {
-    if(auto vdecl = handleDerivedNode(der, ctx, node)) {
-      val = vdecl;
-    }
-  }
-  );
-  assert(val && "Macro expansion did not produce a witness");
+  auto *val = deriveRequirementViaMacro(der, requirement->getModuleContext(), code);
+  assert(val);
   (void)nominalDecl->getEffectiveMemberwiseInitializer();
   return val;
 }
@@ -368,10 +346,10 @@ DerivedConformance::deriveAdditiveArithmetic(ValueDecl *requirement) {
   if (checkAndDiagnoseDisallowedContext(requirement))
     return nullptr;
 
-  auto &C = requirement->getASTContext();
-  if (C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
-    return deriveAdditiveArithmeticViaMacro(*this, requirement);
-  }
+  // auto &C = requirement->getASTContext();
+  // if (C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+  //   return deriveAdditiveArithmeticViaMacro(*this, requirement);
+  // }
 
   if (requirement->getBaseName() == Context.getIdentifier("+"))
     return deriveMathOperator(*this, Add);

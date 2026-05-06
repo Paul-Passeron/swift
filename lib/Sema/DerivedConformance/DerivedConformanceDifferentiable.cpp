@@ -339,7 +339,8 @@ static ValueDecl *deriveDifferentiable_move(DerivedConformance &derived) {
 }
 
 static StructDecl *
-synthesizeTangentVectorStructDecl(DerivedConformance &derived) {
+synthesizeTangentVectorStructDecl(DerivedConformance &derived,
+                                  AssociatedTypeDecl *requirement) {
   auto *parentDC = derived.getConformanceContext();
   auto *nominal = derived.Nominal;
   auto &C = nominal->getASTContext();
@@ -379,50 +380,96 @@ synthesizeTangentVectorStructDecl(DerivedConformance &derived) {
   SmallVector<VarDecl *, 8> diffProperties;
   getStoredPropertiesForDifferentiation(nominal, parentDC, diffProperties);
 
+  StructDecl *structDecl = nullptr;
+
   if (isMacroDerivationEnabled(C)) {
-    //TODO: Implement the synthesis of TangentVector type via macro
-    llvm_unreachable("TODO");
+    std::string code = "#deriveDifferentiableTangentVector([\n";
+    for (const auto &prop : diffProperties) {
+      auto propTy = prop->getInterfaceType();
+      code += "    StoredProperty(";
+      code += "name: \"";
+      code += prop->getNameStr();
+      code += "\", typeName: \"";
+      code += getTangentVectorInterfaceType(propTy, parentDC)->getString();
+      code += "\", ";
+      code += "introducer: .`";
+      code += prop->getIntroducerStringRef();
+      code += "`, isStatic: ";
+      code += prop->isStatic() ? "true" : "false";
+      code += "),\n";
+    }
+    code += "], [\n";
+    for (auto conformance : tvDesiredProtos) {
+      code += "    \"";
+      code += conformance->getNameStr();
+      code += "\",\n";
+    }
+    code += "])";
+
+    llvm::errs() << code << "\n";
+    auto *module = requirement->getModuleContext();
+    auto *val = deriveTypeRequirementViaMacro(derived, module, code);
+    assert(val);
+    structDecl = dyn_cast<StructDecl>(val);
+    assert(structDecl);
+    structDecl->setImplicit();
+    structDecl->setSynthesized();
+  } else {
+    auto synthesizedLoc = derived.ConformanceDecl->getEndLoc();
+    structDecl = new (C)
+        StructDecl(synthesizedLoc, C.Id_TangentVector, synthesizedLoc,
+                   /*Inherited*/ C.AllocateCopy(tvDesiredProtoInherited),
+                   /*GenericParams*/ {}, parentDC);
+    structDecl->setBraces({synthesizedLoc, synthesizedLoc});
+    structDecl->setImplicit();
+    structDecl->setSynthesized();
+    structDecl->copyFormalAccessFrom(nominal, /*sourceIsParentContext*/ true);
+    // Add stored properties to the `TangentVector` struct.
+    for (auto *member : diffProperties) {
+      // Add a tangent stored property to the `TangentVector` struct, with the
+      // name and `TangentVector` type of the original property.
+      auto *tangentProperty = new (C)
+          VarDecl(member->isStatic(), member->getIntroducer(),
+                  /*NameLoc*/ SourceLoc(), member->getName(), structDecl);
+      // Note: `tangentProperty` is not marked as implicit or synthesized here,
+      // because that incorrectly affects memberwise initializer synthesis and
+      // causes the type checker to not guarantee the order of these members.
+      auto memberContextualType =
+          parentDC->mapTypeIntoEnvironment(member->getValueInterfaceType());
+      auto memberTanInterfaceType =
+          getTangentVectorInterfaceType(memberContextualType, parentDC);
+      tangentProperty->setInterfaceType(memberTanInterfaceType);
+      auto memberTanContextType =
+          parentDC->mapTypeIntoEnvironment(memberTanInterfaceType);
+      Pattern *memberPattern = NamedPattern::createImplicit(
+          C, tangentProperty, memberTanContextType);
+      memberPattern =
+          TypedPattern::createImplicit(C, memberPattern, memberTanContextType);
+
+      auto *memberBinding = PatternBindingDecl::createImplicit(
+          C, StaticSpellingKind::None, memberPattern, /*initExpr*/ nullptr,
+          structDecl);
+      structDecl->addMember(tangentProperty);
+      structDecl->addMember(memberBinding);
+    }
   }
 
-  auto synthesizedLoc = derived.ConformanceDecl->getEndLoc();
-  auto *structDecl =
-      new (C) StructDecl(synthesizedLoc, C.Id_TangentVector, synthesizedLoc,
-                         /*Inherited*/ C.AllocateCopy(tvDesiredProtoInherited),
-                         /*GenericParams*/ {}, parentDC);
-  structDecl->setBraces({synthesizedLoc, synthesizedLoc});
-  structDecl->setImplicit();
-  structDecl->setSynthesized();
-  structDecl->copyFormalAccessFrom(nominal, /*sourceIsParentContext*/ true);
+  for (auto *tangentProperty : structDecl->getStoredProperties()) {
+    VarDecl *member = nullptr;
+    for (auto *memberDecl : diffProperties) {
+      if (memberDecl->getName() == tangentProperty->getName()) {
+        member = memberDecl;
+        break;
+      }
+    }
+    assert(member);
+    if (!tangentProperty->hasAccess()) {
+      tangentProperty->copyFormalAccessFrom(member,
+                                            /*sourceIsParentContext*/ true);
+    } else {
+      tangentProperty->overwriteAccess(member->getFormalAccess());
+    }
 
-  // Add stored properties to the `TangentVector` struct.
-  for (auto *member : diffProperties) {
-    // Add a tangent stored property to the `TangentVector` struct, with the
-    // name and `TangentVector` type of the original property.
-    auto *tangentProperty =
-        new (C) VarDecl(member->isStatic(), member->getIntroducer(),
-                        /*NameLoc*/ SourceLoc(), member->getName(), structDecl);
-    // Note: `tangentProperty` is not marked as implicit or synthesized here,
-    // because that incorrectly affects memberwise initializer synthesis and
-    // causes the type checker to not guarantee the order of these members.
-    auto memberContextualType =
-        parentDC->mapTypeIntoEnvironment(member->getValueInterfaceType());
-    auto memberTanInterfaceType =
-        getTangentVectorInterfaceType(memberContextualType, parentDC);
-    tangentProperty->setInterfaceType(memberTanInterfaceType);
-    auto memberTanContextType =
-        parentDC->mapTypeIntoEnvironment(memberTanInterfaceType);
-    Pattern *memberPattern =
-        NamedPattern::createImplicit(C, tangentProperty, memberTanContextType);
-    memberPattern =
-        TypedPattern::createImplicit(C, memberPattern, memberTanContextType);
-
-    auto *memberBinding = PatternBindingDecl::createImplicit(
-        C, StaticSpellingKind::None, memberPattern, /*initExpr*/ nullptr,
-        structDecl);
-    structDecl->addMember(tangentProperty);
-    structDecl->addMember(memberBinding);
-    tangentProperty->copyFormalAccessFrom(member,
-                                          /*sourceIsParentContext*/ true);
     tangentProperty->setSetterAccess(member->getFormalAccess());
 
     // Cache the tangent property.
@@ -430,10 +477,10 @@ synthesizeTangentVectorStructDecl(DerivedConformance &derived) {
                             TangentPropertyInfo(tangentProperty));
 
     // Now that the original property has a corresponding tangent property, it
-    // should be marked `@differentiable` so that the differentiation transform
-    // will synthesize derivative functions for its accessors. We only add this
-    // to public stored properties, because their access outside the module will
-    // go through accessor declarations.
+    // should be marked `@differentiable` so that the differentiation
+    // transform will synthesize derivative functions for its accessors. We
+    // only add this to public stored properties, because their access outside
+    // the module will go through accessor declarations.
     if (member->getEffectiveAccess() > AccessLevel::Internal &&
         !member->getAttrs().hasAttribute<DifferentiableAttr>()) {
       auto *getter = member->getSynthesizedAccessor(AccessorKind::Get);
@@ -445,9 +492,9 @@ synthesizeTangentVectorStructDecl(DerivedConformance &derived) {
         continue;
       GenericSignature derivativeGenericSignature =
           getter->getGenericSignature();
-      // If the parent declaration context is an extension, the nominal type may
-      // conditionally conform to `Differentiable`. Use the extension generic
-      // requirements in getter `@differentiable` attributes.
+      // If the parent declaration context is an extension, the nominal type
+      // may conditionally conform to `Differentiable`. Use the extension
+      // generic requirements in getter `@differentiable` attributes.
       if (auto *extDecl = dyn_cast<ExtensionDecl>(parentDC->getAsDecl()))
         if (auto extGenSig = extDecl->getGenericSignature())
           derivativeGenericSignature = extGenSig;
@@ -466,7 +513,9 @@ synthesizeTangentVectorStructDecl(DerivedConformance &derived) {
 /// Return associated `TangentVector` struct for a nominal type, if it exists.
 /// If not, synthesize the struct.
 static StructDecl *
-getOrSynthesizeTangentVectorStruct(DerivedConformance &derived, Identifier id) {
+getOrSynthesizeTangentVectorStruct(DerivedConformance &derived,
+                                   AssociatedTypeDecl *requirement,
+                                   Identifier id) {
   auto *nominal = derived.Nominal;
   auto &C = nominal->getASTContext();
 
@@ -481,8 +530,9 @@ getOrSynthesizeTangentVectorStruct(DerivedConformance &derived, Identifier id) {
   }
 
   // Otherwise, synthesize a new struct.
-
-  auto *structDecl = synthesizeTangentVectorStructDecl(derived);
+  llvm::errs() << "Synthesizing TangentVector struct for " << nominal->getName()
+               << "\n";
+  auto *structDecl = synthesizeTangentVectorStructDecl(derived, requirement);
 
   // If nominal type is `@frozen`, also mark `TangentVector` struct.
   if (nominal->getAttrs().hasAttribute<FrozenAttr>())
@@ -516,8 +566,9 @@ getOrSynthesizeTangentVectorStruct(DerivedConformance &derived, Identifier id) {
   // After memberwise initializer is synthesized, mark members as implicit.
   for (auto *member : structDecl->getStoredProperties())
     member->setImplicit();
-
-  derived.addMembersToConformanceContext({structDecl});
+  if (!isMacroDerivationEnabled(C)) {
+    derived.addMembersToConformanceContext({structDecl});
+  }
 
   TypeChecker::checkConformancesInContext(structDecl);
 
@@ -609,14 +660,15 @@ static void checkAndDiagnoseImplicitNoDerivative(ASTContext &Context,
 
 /// Get or synthesize `TangentVector` struct type.
 static std::pair<Type, TypeDecl *>
-getOrSynthesizeTangentVectorStructType(DerivedConformance &derived) {
+getOrSynthesizeTangentVectorStructType(DerivedConformance &derived,
+                                       AssociatedTypeDecl *requirement) {
   auto *parentDC = derived.getConformanceContext();
   auto *nominal = derived.Nominal;
   auto &C = nominal->getASTContext();
 
   // Get or synthesize `TangentVector` struct.
-  auto *tangentStruct =
-      getOrSynthesizeTangentVectorStruct(derived, C.Id_TangentVector);
+  auto *tangentStruct = getOrSynthesizeTangentVectorStruct(derived, requirement,
+                                                           C.Id_TangentVector);
   if (!tangentStruct)
     return std::make_pair(nullptr, nullptr);
 
@@ -631,7 +683,8 @@ getOrSynthesizeTangentVectorStructType(DerivedConformance &derived) {
 
 /// Synthesize the `TangentVector` struct type.
 static std::pair<Type, TypeDecl *>
-deriveDifferentiable_TangentVectorStruct(DerivedConformance &derived) {
+deriveDifferentiable_TangentVectorStruct(DerivedConformance &derived,
+                                         AssociatedTypeDecl *requirement) {
   auto *parentDC = derived.getConformanceContext();
   auto *nominal = derived.Nominal;
 
@@ -641,7 +694,7 @@ deriveDifferentiable_TangentVectorStruct(DerivedConformance &derived) {
     return std::make_pair(parentDC->getSelfTypeInContext(), nullptr);
 
   // Otherwise, get or synthesize `TangentVector` struct type.
-  return getOrSynthesizeTangentVectorStructType(derived);
+  return getOrSynthesizeTangentVectorStructType(derived, requirement);
 }
 
 ValueDecl *DerivedConformance::deriveDifferentiable(ValueDecl *requirement) {
@@ -694,7 +747,7 @@ DerivedConformance::deriveDifferentiable(AssociatedTypeDecl *requirement) {
   // If derivation is possible, cancel the diagnostic and perform derivation.
   if (canDeriveDifferentiable(Nominal, getConformanceContext(), requirement)) {
     diagnosticTransaction.abort();
-    return deriveDifferentiable_TangentVectorStruct(*this);
+    return deriveDifferentiable_TangentVectorStruct(*this, requirement);
   }
 
   // Otherwise, return nullptr.

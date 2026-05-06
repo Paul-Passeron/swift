@@ -40,19 +40,26 @@ unsigned registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
 MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &ctx,
                                               ModuleDecl *module,
                                               unsigned bufferID,
-                                              DeclContext *parentDc);
+                                              DeclContext *parentDc,
+                                              ModuleDecl *otherModule);
 
-SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived,
-                                       ValueDecl *requirement);
+SourceLoc getValidSourceLocForImplicit(DerivedConformance &derived);
 
 ValueDecl *handleDerivedNode(DerivedConformance &der, ASTContext &ctx,
                              ASTNode node);
+TypeDecl *handleTypeDeclDerivedNode(DerivedConformance &der, ASTContext &ctx,
+                                    ASTNode node);
 
-MacroExpansionDecl *createMacroExpansionForConformanceDerivation(
-    DerivedConformance &der, ValueDecl *requirement, StringRef code);
+MacroExpansionDecl *
+createMacroExpansionForConformanceDerivation(DerivedConformance &der,
+                                             ModuleDecl *module, StringRef code,
+                                             bool forType);
 
 ValueDecl *deriveRequirementViaMacro(DerivedConformance &der,
-                                     ValueDecl *requirement, StringRef code);
+                                     ModuleDecl *module, StringRef code);
+
+TypeDecl *deriveTypeRequirementViaMacro(DerivedConformance &der,
+                                        ModuleDecl *module, StringRef code);
 
 // ASTGen
 extern "C" bool swift_Macros_expandFreestandingMacroSynthetic(

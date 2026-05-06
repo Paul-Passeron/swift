@@ -462,7 +462,8 @@ static ValueDecl *deriveEquatableViaMacro(DerivedConformance &der,
   std::string code = "#deriveComparison(\"==\",\n";
   code += getDerivedConformanceMacroArg(der, requirement);
   code += ")";
-  auto *val = deriveRequirementViaMacro(der, requirement, code);
+  auto *val =
+      deriveRequirementViaMacro(der, requirement->getModuleContext(), code);
   assert(val);
   return val;
 }
@@ -985,7 +986,7 @@ static ValueDecl *deriveHashableViaMacro(DerivedConformance &der,
   if (!code) {
     return nullptr;
   }
-  return deriveRequirementViaMacro(der, requirement, *code);
+  return deriveRequirementViaMacro(der, requirement->getModuleContext(), *code);
 }
 
 static ValueDecl *deriveHashable(DerivedConformance &der,
@@ -1088,8 +1089,8 @@ static ValueDecl *deriveHashableReqViaMacro(DerivedConformance &der,
     if (!canDeriveConformance(der.getConformanceContext(), der.Nominal,
                               hashableProto)) {
       der.ConformanceDecl->diagnose(diag::type_does_not_conform,
-                                der.Nominal->getDeclaredType(),
-                                hashableProto->getDeclaredInterfaceType());
+                                    der.Nominal->getDeclaredType(),
+                                    hashableProto->getDeclaredInterfaceType());
       auto *dc = cast<DeclContext>(der.ConformanceDecl);
       der.tryDiagnoseFailedHashableDerivation(dc, der.Nominal);
       return nullptr;
@@ -1182,7 +1183,8 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
 // std::unique_ptr<llvm::MemoryBuffer>
 // swift::evaluateEquatableStructMacroBuffer(ASTContext &ctx,
 //                                           AbstractFunctionDecl *fn,
-//                                           MacroDecl *macro, CustomAttr *attr) {
+//                                           MacroDecl *macro, CustomAttr *attr)
+//                                           {
 //   auto *parent = fn->getParent();
 //   assert(parent && "Should have a parent context");
 
@@ -1201,7 +1203,8 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
 //   char *outBuffer;
 //   size_t outLen;
 //   const char *const *propertyNames = fieldNames.data();
-//   if (!swift_ASTGen_expandEquatableStructMacro(propertyNames, fieldNames.size(),
+//   if (!swift_ASTGen_expandEquatableStructMacro(propertyNames,
+//   fieldNames.size(),
 //                                                &outBuffer, &outLen)) {
 //     return nullptr;
 //   }

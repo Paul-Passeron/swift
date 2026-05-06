@@ -352,6 +352,8 @@ list(APPEND swift_stdlib_compile_flags "-enable-experimental-feature" "BorrowAnd
 list(APPEND swift_stdlib_compile_flags "-enable-experimental-feature" "BorrowInout")
 list(APPEND swift_stdlib_compile_flags "-strict-memory-safety")
 
+list(APPEND swift_stdlib_compile_flags "-enable-experimental-feature" "DeriveConformancesViaMacros")
+
 if("${SWIFT_NATIVE_SWIFT_TOOLS_PATH}" STREQUAL "")
   set(swift_bin_dir "${CMAKE_BINARY_DIR}/bin")
   set(swift_lib_dir "${CMAKE_BINARY_DIR}/lib")

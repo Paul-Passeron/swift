@@ -296,7 +296,7 @@ static ValueDecl *deriveComparableViaMacros(DerivedConformance &der,
   std::string code = "#deriveComparison(\"<\",\n";
   code += getDerivedConformanceMacroArg(der, requirement);
   code += ")";
-  auto *val = deriveRequirementViaMacro(der, requirement, code);
+  auto *val = deriveRequirementViaMacro(der, requirement->getModuleContext(), code);
   assert(val);
   return val;
 }

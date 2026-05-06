@@ -17,12 +17,17 @@
 
 #include "DerivedConformanceMacros.h"
 #include "CodeSynthesis.h"
+#include "DerivedConformance/DerivedConformance.h"
 #include "swift/AST/ASTContext.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/DeclContext.h"
+#include "swift/AST/DeclNameLoc.h"
+#include "swift/AST/Import.h"
 #include "swift/AST/LayoutConstraint.h"
 #include "swift/AST/MacroDefinition.h"
 #include "swift/AST/NameLookup.h"
+#include "swift/AST/SourceFile.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
@@ -67,7 +72,6 @@ unsigned swift::registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
   auto buffer =
       llvm::MemoryBuffer::getMemBufferCopy(code, getUniqueASTGenBufferName());
   auto bufferID = ctx.SourceMgr.addNewSourceBuffer(std::move(buffer));
-
   GeneratedSourceInfo info;
   info.kind = GeneratedSourceInfo::Kind::DeclarationMacroExpansion;
   info.originalSourceRange = CharSourceRange(atLoc, 0);
@@ -75,14 +79,14 @@ unsigned swift::registerSynthesizedMacroBuffer(ASTContext &ctx, StringRef code,
   info.astNode = ASTNode(der.ConformanceDecl).getOpaqueValue();
   info.declContext = parentDc;
   ctx.SourceMgr.setGeneratedSourceInfo(bufferID, info);
-
   return bufferID;
 }
 
 MacroExpansionDecl *swift::parseSynthesizedMacroDecl(ASTContext &ctx,
                                                      ModuleDecl *module,
                                                      unsigned bufferID,
-                                                     DeclContext *parentDc) {
+                                                     DeclContext *parentDc,
+                                                     ModuleDecl *otherModule) {
   auto *SF =
       new (ctx) SourceFile(*module, SourceFileKind::MacroExpansion, bufferID);
   SF->setImports({});
@@ -95,24 +99,8 @@ MacroExpansionDecl *swift::parseSynthesizedMacroDecl(ASTContext &ctx,
   return free;
 }
 
-SourceLoc swift::getValidSourceLocForImplicit(DerivedConformance &derived,
-                                              ValueDecl *requirement) {
-  auto atLoc = derived.Conformance->getLoc();
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = requirement->getStartLoc();
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = requirement->getEndLoc();
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = derived.Nominal->getBraces().Start;
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = derived.Nominal->getBraces().End;
-  if (atLoc.isValid())
-    return atLoc;
-  atLoc = derived.Nominal->getBraces().End.getAdvancedLocOrInvalid(-1);
+SourceLoc swift::getValidSourceLocForImplicit(DerivedConformance &derived) {
+  auto atLoc = derived.ConformanceDecl->getEndLoc();
   assert(atLoc.isValid() && "Conformance loc is invalid");
   return atLoc;
 }
@@ -164,31 +152,54 @@ ValueDecl *swift::handleDerivedNode(DerivedConformance &der, ASTContext &ctx,
   return vdecl;
 }
 
+TypeDecl *swift::handleTypeDeclDerivedNode(DerivedConformance &der,
+                                           ASTContext &ctx, ASTNode node) {
+  auto *decl = node.dyn_cast<Decl *>();
+  assert(decl);
+  auto tdecl = dyn_cast<TypeDecl>(decl);
+  assert(tdecl);
+  return tdecl;
+}
+
 MacroExpansionDecl *swift::createMacroExpansionForConformanceDerivation(
-    DerivedConformance &der, ValueDecl *requirement, StringRef code) {
+    DerivedConformance &der, ModuleDecl *module, StringRef code, bool forType) {
   auto *parentDc = der.getConformanceContext();
   auto &ctx = parentDc->getASTContext();
-  auto atLoc = getValidSourceLocForImplicit(der, requirement);
+  auto atLoc = getValidSourceLocForImplicit(der);
   auto bufferID =
       registerSynthesizedMacroBuffer(ctx, code, parentDc, atLoc, der);
-  auto *free = parseSynthesizedMacroDecl(ctx, requirement->getModuleContext(),
-                                         bufferID, parentDc);
-
+  auto *free =
+      parseSynthesizedMacroDecl(ctx, der.getParentModule(), bufferID, parentDc, module);
   auto *eInfo = free->getExpansionInfo();
   eInfo->SigilLoc = atLoc;
   eInfo->MacroNameLoc = DeclNameLoc(atLoc);
-
   der.addMemberToConformanceContext(free, nullptr);
   return free;
 }
 
+TypeDecl *swift::deriveTypeRequirementViaMacro(DerivedConformance &der,
+                                               ModuleDecl *module,
+                                               StringRef code) {
+  auto *parentDc = der.getConformanceContext();
+  auto &ctx = parentDc->getASTContext();
+  auto *free =
+      createMacroExpansionForConformanceDerivation(der, module, code, true);
+  TypeDecl *decl = nullptr;
+  free->forEachExpandedNode([&](ASTNode node) {
+    if (auto tdecl = handleTypeDeclDerivedNode(der, ctx, node)) {
+      decl = tdecl;
+    }
+  });
+  return decl;
+}
+
 ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &der,
-                                            ValueDecl *requirement,
+                                            ModuleDecl *module,
                                             StringRef code) {
   auto *parentDc = der.getConformanceContext();
   auto &ctx = parentDc->getASTContext();
   auto *free =
-      createMacroExpansionForConformanceDerivation(der, requirement, code);
+      createMacroExpansionForConformanceDerivation(der, module, code, false);
   ValueDecl *val = nullptr;
   free->forEachExpandedNode([&](ASTNode node) {
     if (auto vdecl = handleDerivedNode(der, ctx, node)) {
@@ -200,3 +211,4 @@ ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &der,
 
 bool swift::isMacroDerivationEnabled(const ASTContext &C) {
   return C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros);
+}

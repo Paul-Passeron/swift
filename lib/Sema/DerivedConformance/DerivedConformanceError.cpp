@@ -130,7 +130,7 @@ static ValueDecl *deriveBridgedNSErrorViaMacros(DerivedConformance &der,
     code += value;
     code += "\")";
   }
-  auto *val = deriveRequirementViaMacro(der, requirement, code);
+  auto *val = deriveRequirementViaMacro(der, requirement->getModuleContext(), code);
   assert(val && "Macro expansion did not produce a witness");
   return val;
 }
