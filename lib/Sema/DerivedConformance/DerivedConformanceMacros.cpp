@@ -91,6 +91,10 @@ MacroExpansionDecl *swift::parseSynthesizedMacroDecl(ASTContext &ctx,
       new (ctx) SourceFile(*module, SourceFileKind::MacroExpansion, bufferID);
   SF->setImports({});
   auto decls = SF->getTopLevelDecls();
+  if (decls.size() != 1) {
+    llvm::errs() << "Expected 1 top-level decl, got " << decls.size() << "\n";
+
+  }
   assert(decls.size() == 1);
   auto *decl = decls[0];
   decl->setImplicit(true);

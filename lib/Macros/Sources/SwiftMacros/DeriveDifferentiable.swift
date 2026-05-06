@@ -33,13 +33,11 @@ func getStatic(_ isStatic: Bool) -> String {
   if isStatic { "static " } else { "" }
 }
 
-func deriveTangentVector(properties: [StoredProperty], conformances: [String], isFrozen: Bool)
+func deriveTangentVector(properties: [StoredProperty], conformances: [String])
   -> String
 {
-  let frozenAttr = if isFrozen { "@frozen" } else { "" }
   let prologue =
     """
-    \(frozenAttr)
     struct TangentVector: \(conformances.joined(separator: ", ")) {
     	typealias TangentVector = Self
     """
@@ -160,31 +158,60 @@ public struct ArgParser {
   }
 }
 
+func deriveMove(properties: [StoredProperty], mutating: Bool) -> String {
+  let body = properties.map {
+    "\($0.name).move(by: offset.\($0.name))"
+  }.joined(separator: "\n")
+  return
+    """
+    \(mutating ? "mutating " : "")func move(by offset: TangentVector) {
+      \(body)
+    }
+    """
+}
+
 public struct DeriveDifferentiableTangentVectorMacro: DeclarationMacro {
   public static func expansion(
     of node: some FreestandingMacroExpansionSyntax,
     in context: some MacroExpansionContext
   ) throws -> [DeclSyntax] {
-    guard node.arguments.count == 2 else { fatalError() }
+    guard node.arguments.count == 3 else { fatalError() }
     let args = node.arguments.map { $0 }
-
     guard
-      let parsed = ArgParser.parse(properties: args[0].expression, conformances: args[1].expression)
+      let requirement = args[0].expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue
+    else {
+      fatalError("Invalid requirement `\(args[0].expression)`")
+    }
+    guard
+      let parsed = ArgParser.parse(properties: args[1].expression, conformances: args[2].expression)
     else {
       fatalError("ParseError")
     }
+    switch requirement {
+    case "TangentVector":
+      let code = deriveTangentVector(
+        properties: parsed.storedProperties,
+        conformances: parsed.conformances)
 
-    let code = deriveTangentVector(
-      properties: parsed.storedProperties,
-      conformances: parsed.conformances,
-      isFrozen: false /*todo: actually pass the info*/)
-
-    return
-      [
+      return
+        [
+          """
+          \(raw: code)
+          """
+        ]
+    case "mutating move":
+      return [
         """
-        \(raw: code)
+        \(raw: deriveMove(properties: parsed.storedProperties, mutating: true))
         """
       ]
+    case "move":
+      return [
+        """
+        \(raw: deriveMove(properties: parsed.storedProperties, mutating: false))
+        """
+      ]
+    default: fatalError("Unsupported requirement `\(requirement)`")
+    }
   }
-
 }

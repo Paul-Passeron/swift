@@ -29,10 +29,12 @@
 #include "swift/AST/Pattern.h"
 #include "swift/AST/PropertyWrappers.h"
 #include "swift/AST/ProtocolConformance.h"
+#include "swift/AST/Requirement.h"
 #include "swift/AST/Stmt.h"
 #include "swift/AST/TypeCheckRequests.h"
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -292,6 +294,80 @@ deriveBodyDifferentiable_move(AbstractFunctionDecl *funcDecl, void *) {
   return std::pair<BraceStmt *, bool>(braceStmt, false);
 }
 
+template <unsigned int N>
+static std::optional<std::string> getMacroTextForDifferentiableRequirement(
+    StringRef requirement, ArrayRef<VarDecl *> diffProperties,
+    llvm::SmallSetVector<ProtocolDecl *, N> tvDesiredProtos,
+    DeclContext *parentDC) {
+  if (requirement != "TangentVector" && requirement != "move" && requirement != "mutating move")
+    return std::nullopt;
+  std::string code = "#deriveDifferentiableTangentVector(\"";
+  code += requirement;
+  code += "\", [\n";
+  for (const auto &prop : diffProperties) {
+    auto propTy = prop->getInterfaceType();
+    code += "    StoredProperty(";
+    code += "name: \"";
+    code += prop->getNameStr();
+    code += "\", typeName: \"";
+    code += getTangentVectorInterfaceType(propTy, parentDC)->getString();
+    code += "\", ";
+    code += "introducer: .`";
+    code += prop->getIntroducerStringRef();
+    code += "`, isStatic: ";
+    code += prop->isStatic() ? "true" : "false";
+    code += "),\n";
+  }
+  code += "], [\n";
+  for (auto conformance : tvDesiredProtos) {
+    code += "    \"";
+    code += conformance->getNameStr();
+    code += "\",\n";
+  }
+  code += "])";
+  return code;
+}
+
+static ValueDecl *deriveDifferentiableMoveViaMacro(DerivedConformance &derived,
+                                                   ValueDecl *requirement) {
+  auto *parentDC = derived.getConformanceContext();
+  auto *nominal = derived.Nominal;
+  auto &C = nominal->getASTContext();
+
+  llvm::SmallSetVector<ProtocolDecl *, 4> tvDesiredProtos;
+
+  auto *diffableProto = C.getProtocol(KnownProtocolKind::Differentiable);
+  auto *tvAssocType = diffableProto->getAssociatedType(C.Id_TangentVector);
+
+  auto localProtos =
+      cast<IterableDeclContext>(derived.ConformanceDecl)->getLocalProtocols();
+  for (auto proto : localProtos) {
+    for (auto req : proto->getRequirementSignature().getRequirements()) {
+      if (req.getKind() != RequirementKind::Conformance)
+        continue;
+      auto *firstType = req.getFirstType()->getAs<DependentMemberType>();
+      if (!firstType || firstType->getAssocType() != tvAssocType)
+        continue;
+      tvDesiredProtos.insert(req.getProtocolDecl());
+    }
+  }
+
+  // Cache original members and their associated types for later use.
+  SmallVector<VarDecl *, 8> diffProperties;
+  getStoredPropertiesForDifferentiation(nominal, parentDC, diffProperties);
+  std::string req = "mutating move";
+  if (nominal->getSelfClassDecl()) {
+    req = "move";
+  }
+  auto code = getMacroTextForDifferentiableRequirement(
+      req, diffProperties, tvDesiredProtos, parentDC);
+  assert(code.has_value());
+  auto *val = deriveRequirementViaMacro(derived,
+                                        requirement->getModuleContext(), *code);
+  assert(val);
+  return val;
+}
+
 /// Synthesize function declaration for a `Differentiable` method requirement.
 static ValueDecl *deriveDifferentiable_method(
     DerivedConformance &derived, Identifier methodName, Identifier argumentName,
@@ -328,7 +404,10 @@ static ValueDecl *deriveDifferentiable_method(
 }
 
 /// Synthesize the `move(by:)` function declaration.
-static ValueDecl *deriveDifferentiable_move(DerivedConformance &derived) {
+static ValueDecl *deriveDifferentiable_move(DerivedConformance &derived, ValueDecl *requirement) {
+  if (isMacroDerivationEnabled(requirement->getASTContext())) {
+    return deriveDifferentiableMoveViaMacro(derived, requirement);
+  }
   auto &C = derived.Context;
   auto *parentDC = derived.getConformanceContext();
   auto tangentType =
@@ -383,32 +462,11 @@ synthesizeTangentVectorStructDecl(DerivedConformance &derived,
   StructDecl *structDecl = nullptr;
 
   if (isMacroDerivationEnabled(C)) {
-    std::string code = "#deriveDifferentiableTangentVector([\n";
-    for (const auto &prop : diffProperties) {
-      auto propTy = prop->getInterfaceType();
-      code += "    StoredProperty(";
-      code += "name: \"";
-      code += prop->getNameStr();
-      code += "\", typeName: \"";
-      code += getTangentVectorInterfaceType(propTy, parentDC)->getString();
-      code += "\", ";
-      code += "introducer: .`";
-      code += prop->getIntroducerStringRef();
-      code += "`, isStatic: ";
-      code += prop->isStatic() ? "true" : "false";
-      code += "),\n";
-    }
-    code += "], [\n";
-    for (auto conformance : tvDesiredProtos) {
-      code += "    \"";
-      code += conformance->getNameStr();
-      code += "\",\n";
-    }
-    code += "])";
-
-    llvm::errs() << code << "\n";
+    auto code = getMacroTextForDifferentiableRequirement(
+        "TangentVector", diffProperties, tvDesiredProtos, parentDC);
+    assert(code.has_value());
     auto *module = requirement->getModuleContext();
-    auto *val = deriveTypeRequirementViaMacro(derived, module, code);
+    auto *val = deriveTypeRequirementViaMacro(derived, module, *code);
     assert(val);
     structDecl = dyn_cast<StructDecl>(val);
     assert(structDecl);
@@ -721,7 +779,7 @@ ValueDecl *DerivedConformance::deriveDifferentiable(ValueDecl *requirement) {
   if (canDeriveDifferentiable(Nominal, getConformanceContext(), requirement)) {
     diagnosticTransaction.abort();
     if (requirement->getBaseName() == Context.Id_move)
-      return deriveDifferentiable_move(*this);
+      return deriveDifferentiable_move(*this, requirement);
   }
 
   // Otherwise, return nullptr.
