@@ -5202,9 +5202,6 @@ void PrintAST::visitMacroDecl(MacroDecl *decl) {
         case BuiltinMacroKind::IsolationMacro:
           Printer << "IsolationMacro";
           break;
-        case BuiltinMacroKind::DerivedConformanceMacro:
-          Printer << "DerivedConformanceMacro";
-          break;
         }
         break;
 

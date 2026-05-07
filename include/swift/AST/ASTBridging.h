@@ -3035,8 +3035,6 @@ enum ENUM_EXTENSIBILITY_ATTR(open) BridgedMacroDefinitionKind : size_t {
   BridgedBuiltinExternalMacro,
   /// The builtin definition for the "isolation" macro.
   BridgedBuiltinIsolationMacro,
-
-  BridgedBuiltinDerivedConformanceMacro,
 };
 
 struct BridgedASTType {

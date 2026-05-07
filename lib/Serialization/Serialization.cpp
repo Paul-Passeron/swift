@@ -5366,9 +5366,6 @@ public:
         case BuiltinMacroKind::IsolationMacro:
           builtinID = 2;
           break;
-        case BuiltinMacroKind::DerivedConformanceMacro:
-          builtinID = 3;
-          break;
         }
         break;
       }

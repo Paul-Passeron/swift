@@ -34,15 +34,6 @@
 
 using namespace swift;
 
-bool swift::isAstGenMacro(MacroDecl *macro) {
-  auto macroDef = macro->getDefinition();
-  if (macroDef.kind != MacroDefinition::Kind::Builtin) {
-    return false;
-  }
-  auto builtinKind = macroDef.getBuiltinKind();
-  return builtinKind == BuiltinMacroKind::DerivedConformanceMacro;
-}
-
 std::string swift::getUniqueASTGenBufferName() {
   static int counter = 0;
   return "__ast_gen_macro_expansion__" + std::to_string(counter++);

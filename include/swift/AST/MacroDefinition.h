@@ -77,8 +77,6 @@ enum class BuiltinMacroKind : uint8_t {
   ExternalMacro,
   /// #isolation, which produces the isolation of the current context
   IsolationMacro,
-
-  DerivedConformanceMacro,
 };
 
 /// A single replacement

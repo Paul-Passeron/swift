@@ -191,9 +191,6 @@ MacroDefinition MacroDefinitionRequest::evaluate(Evaluator &evaluator,
   case BridgedBuiltinIsolationMacro:
     return MacroDefinition::forBuiltin(BuiltinMacroKind::IsolationMacro);
 
-  case BridgedBuiltinDerivedConformanceMacro:
-    return MacroDefinition::forBuiltin(
-        BuiltinMacroKind::DerivedConformanceMacro);
   }
 
   // Type-check the macro expansion.
@@ -1246,10 +1243,6 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
             scratchSpace, adjustMacroExpansionBufferName(*discriminator));
         break;
       }
-      case BuiltinMacroKind::DerivedConformanceMacro:
-      llvm_unreachable("deprecated");
-        // evaluatedSource = evaluateASTGenMacroBuffer(
-        //     ctx, macro, expansion->getASTNode().dyn_cast<Decl *>(), nullptr);
       }
       break;
     }
@@ -1365,9 +1358,6 @@ std::optional<unsigned> swift::expandMacroExpr(MacroExpansionExpr *mee) {
   case MacroDefinition::Kind::Builtin:
     switch (definition.getBuiltinKind()) {
     case BuiltinMacroKind::ExternalMacro:
-    case BuiltinMacroKind::DerivedConformanceMacro:
-      break;
-
     case BuiltinMacroKind::IsolationMacro:
       expandedExpr = new (ctx) CurrentContextIsolationExpr(
           macroBufferRange.getStart(), expandedType);
@@ -1605,9 +1595,6 @@ evaluateAttachedMacro(MacroDecl *macro, Decl *attachedTo, CustomAttr *attr,
       // FIXME: Error here.
       llvm_unreachable("");
       return nullptr;
-    case BuiltinMacroKind::DerivedConformanceMacro: {
-      llvm_unreachable("deprecated");
-    }
     }
     break;
   }
@@ -1763,8 +1750,6 @@ static SourceFile *evaluateAttachedMacro(MacroDecl *macro,
     switch (macroDef.getBuiltinKind()) {
     case BuiltinMacroKind::ExternalMacro:
     case BuiltinMacroKind::IsolationMacro:
-    case BuiltinMacroKind::DerivedConformanceMacro:
-      llvm_unreachable("");
       // FIXME: Error here.
       return nullptr;
     }
