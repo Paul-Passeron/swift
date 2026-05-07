@@ -171,7 +171,6 @@ func getInitStatementForCase(_ c: RawReprCaseInfo) -> String {
 
 func deriveInit(_ info: RawReprEnumInfo) -> String {
   let switchExpr = getSwitchExpr(info)
-  print(switchExpr)
   return
     """
     init?(rawValue: RawValue) {

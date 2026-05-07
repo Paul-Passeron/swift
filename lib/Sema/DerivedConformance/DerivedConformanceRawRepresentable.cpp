@@ -516,8 +516,7 @@ bool DerivedConformance::canDeriveRawRepresentable(DeclContext *DC,
 }
 
 static std::string escapeString(StringRef str) {
-  auto escaped = llvm::yaml::escape(str);
-  return escaped;
+  return llvm::yaml::escape(str);
 }
 
 static std::string getLiteralExprAsString(LiteralExpr *lit) {
@@ -605,9 +604,6 @@ static std::string getMacroForRawRepresentable(StringRef role,
     code += "),\n";
   }
   code += "        ]\n    )\n)";
-
-  llvm::errs() << code << "\n";
-
   return code;
 }
 
@@ -635,9 +631,9 @@ ValueDecl *DerivedConformance::deriveRawRepresentable(ValueDecl *requirement) {
     return nullptr;
 
   if (requirement->getBaseName() == Context.Id_rawValue) {
-    // if (isMacroDerivationEnabled(requirement->getASTContext())) {
-    //   return deriveRawRepresentableViaMacros_raw(*this, requirement);
-    // }
+    if (isMacroDerivationEnabled(requirement->getASTContext())) {
+      return deriveRawRepresentableViaMacros_raw(*this, requirement);
+    }
     return deriveRawRepresentable_raw(*this);
   }
   if (requirement->getBaseName().isConstructor()) {
