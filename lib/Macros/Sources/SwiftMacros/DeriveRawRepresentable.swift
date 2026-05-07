@@ -156,8 +156,12 @@ func getSwitchCases(_ info: RawReprEnumInfo) -> [(String, RawReprCaseInfo)] {
 }
 
 func getInitStatementForCase(_ c: RawReprCaseInfo) -> String {
-  if c.availability != nil {
-    fatalError()
+  if let av = c.availability {
+    return
+      """
+      \(av.getEarlyReturnStmt().description)
+      self = .\(c.name)
+      """
   }
   return
     """
