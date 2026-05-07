@@ -44,7 +44,7 @@ extension RawReprCaseInfo {
         guard let strlit = arg.expression.as(StringLiteralExprSyntax.self)?.representedLiteralValue
         else { return nil }
         res.rawValue = strlit
-      case "avalability":
+      case "availability":
         if arg.expression.as(NilLiteralExprSyntax.self) != nil {
           res.availability = nil
         } else {
