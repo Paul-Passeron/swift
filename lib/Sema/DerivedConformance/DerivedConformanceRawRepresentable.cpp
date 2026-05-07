@@ -610,8 +610,11 @@ static std::string getMacroForRawRepresentable(StringRef role,
 static ValueDecl *
 deriveRawRepresentableViaMacros_raw(DerivedConformance &derived,
                                     ValueDecl *requirement) {
-  auto code = getMacroForRawRepresentable("raw", derived, requirement);
-  llvm_unreachable("TODO");
+  auto code = getMacroForRawRepresentable("rawValue", derived, requirement);
+  auto *val =
+      deriveRequirementViaMacro(derived, requirement->getModuleContext(), code);
+  assert(val);
+  return val;
 }
 
 static ValueDecl *
