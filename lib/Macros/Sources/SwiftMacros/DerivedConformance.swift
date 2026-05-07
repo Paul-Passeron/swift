@@ -212,3 +212,14 @@ extension CodeBlockItemSyntax {
     """
   }
 }
+
+extension Sequence {
+  @inlinable public func tryMap<T>(_ transform: (Element) throws -> T?) rethrows -> [T]? {
+    var res: [T] = []
+    for elem in self {
+      guard let val = (try transform(elem)) else { return nil }
+      res.append(val)
+    }
+    return res
+  }
+}
