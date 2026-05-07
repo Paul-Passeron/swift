@@ -34,6 +34,40 @@ public struct StoredProperty {
   }
 }
 
+public struct RawReprEnumInfo {
+  public var rawType: String
+  public var isString: Bool  // Might be redondant but avoids bad suprises with shadowing i reckon
+  public var cases: [RawReprCaseInfo]
+
+  public init(rawType: String, isString: Bool, cases: [RawReprCaseInfo]) {
+    self.rawType = rawType
+    self.isString = isString
+    self.cases = cases
+  }
+}
+
+public struct RawReprCaseInfo {
+  public var name: String
+  public var rawValue: String
+  public var availability: RuntimeVersionCheck?
+
+  public init(name: String, rawValue: String, availability: RuntimeVersionCheck?) {
+    self.name = name
+    self.rawValue = rawValue
+    self.availability = availability
+  }
+}
+
+public struct RuntimeVersionCheck {
+  public var platform: String  // PlatformKind in C++
+  public var version: String  // llvm::VersionTuple in C++
+
+  public init(platform: String, version: String) {
+    self.platform = platform
+    self.version = version
+  }
+}
+
 @freestanding(declaration, names: named(hashValue))
 public macro deriveHashableHashValue(_ kind: DerivedNominalKind) =
   #externalMacro(module: "SwiftMacros", type: "DeriveHashableHashValueMacro")
@@ -72,3 +106,7 @@ public macro deriveDifferentiable(
   _ properties: [StoredProperty], _ conformances: [String]
 ) =
   #externalMacro(module: "SwiftMacros", type: "DeriveDifferentiableMacro")
+
+@freestanding(declaration, names: named(init), named(rawValue))
+public macro deriveRawRepresentable(_ role: String, _ info: RawReprCaseInfo) =
+  #externalMacro(module: "SwiftMacros", type: "DeriveRawRepresentableMacro")
