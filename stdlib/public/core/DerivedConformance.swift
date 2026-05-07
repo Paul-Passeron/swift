@@ -110,5 +110,5 @@ public macro deriveDifferentiable(
   #externalMacro(module: "SwiftMacros", type: "DeriveDifferentiableMacro")
 
 @freestanding(declaration, names: named(init), named(rawValue))
-public macro deriveRawRepresentable(_ role: String, _ info: RawReprCaseInfo) =
+public macro deriveRawRepresentable(_ role: String, _ info: RawReprEnumInfo) =
   #externalMacro(module: "SwiftMacros", type: "DeriveRawRepresentableMacro")
