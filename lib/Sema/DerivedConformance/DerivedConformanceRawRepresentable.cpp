@@ -623,7 +623,9 @@ static ValueDecl *
 deriveRawRepresentableViaMacros_init(DerivedConformance &derived,
                                      ValueDecl *requirement) {
   auto code = getMacroForRawRepresentable("init", derived, requirement);
-  llvm_unreachable("TODO");
+  auto *val = deriveRequirementViaMacro(derived, requirement->getModuleContext(), code);
+  assert(val);
+  return val;
 }
 
 ValueDecl *DerivedConformance::deriveRawRepresentable(ValueDecl *requirement) {
