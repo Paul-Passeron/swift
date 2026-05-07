@@ -67,8 +67,8 @@ public macro deriveAdditiveArithmetic(_ req: String, _ properties: [String]) =
   #externalMacro(module: "SwiftMacros", type: "DeriveAdditiveArithmeticMacro")
 
 @freestanding(declaration, names: named(TangentVector), named(move))
-public macro deriveDifferentiableTangentVector(
+public macro deriveDifferentiable(
   _ requirement: String,
   _ properties: [StoredProperty], _ conformances: [String]
 ) =
-  #externalMacro(module: "SwiftMacros", type: "DeriveDifferentiableTangentVectorMacro")
+  #externalMacro(module: "SwiftMacros", type: "DeriveDifferentiableMacro")

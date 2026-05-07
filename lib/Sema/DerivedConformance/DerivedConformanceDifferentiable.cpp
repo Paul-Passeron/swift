@@ -301,7 +301,7 @@ static std::optional<std::string> getMacroTextForDifferentiableRequirement(
     DeclContext *parentDC) {
   if (requirement != "TangentVector" && requirement != "move" && requirement != "mutating move")
     return std::nullopt;
-  std::string code = "#deriveDifferentiableTangentVector(\"";
+  std::string code = "#deriveDifferentiable(\"";
   code += requirement;
   code += "\", [\n";
   for (const auto &prop : diffProperties) {

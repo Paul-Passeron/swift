@@ -170,7 +170,7 @@ func deriveMove(properties: [StoredProperty], mutating: Bool) -> String {
     """
 }
 
-public struct DeriveDifferentiableTangentVectorMacro: DeclarationMacro {
+public struct DeriveDifferentiableMacro: DeclarationMacro {
   public static func expansion(
     of node: some FreestandingMacroExpansionSyntax,
     in context: some MacroExpansionContext
