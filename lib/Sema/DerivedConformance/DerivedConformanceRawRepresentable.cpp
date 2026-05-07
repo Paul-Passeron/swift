@@ -39,6 +39,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/YAMLParser.h"
 #include "llvm/Support/raw_ostream.h"
 #include <ostream>
 #include <string>
@@ -515,9 +516,7 @@ bool DerivedConformance::canDeriveRawRepresentable(DeclContext *DC,
 }
 
 static std::string escapeString(StringRef str) {
-  std::string escaped{};
-  llvm::raw_string_ostream escapedOStream(escaped);
-  llvm::printEscapedString(str, escapedOStream);
+  auto escaped = llvm::yaml::escape(str);
   return escaped;
 }
 
@@ -623,7 +622,8 @@ static ValueDecl *
 deriveRawRepresentableViaMacros_init(DerivedConformance &derived,
                                      ValueDecl *requirement) {
   auto code = getMacroForRawRepresentable("init", derived, requirement);
-  auto *val = deriveRequirementViaMacro(derived, requirement->getModuleContext(), code);
+  auto *val =
+      deriveRequirementViaMacro(derived, requirement->getModuleContext(), code);
   assert(val);
   return val;
 }
@@ -635,9 +635,9 @@ ValueDecl *DerivedConformance::deriveRawRepresentable(ValueDecl *requirement) {
     return nullptr;
 
   if (requirement->getBaseName() == Context.Id_rawValue) {
-    if (isMacroDerivationEnabled(requirement->getASTContext())) {
-      return deriveRawRepresentableViaMacros_raw(*this, requirement);
-    }
+    // if (isMacroDerivationEnabled(requirement->getASTContext())) {
+    //   return deriveRawRepresentableViaMacros_raw(*this, requirement);
+    // }
     return deriveRawRepresentable_raw(*this);
   }
   if (requirement->getBaseName().isConstructor()) {
