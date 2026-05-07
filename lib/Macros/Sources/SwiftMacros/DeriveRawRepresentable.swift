@@ -129,9 +129,7 @@ extension RawReprEnumInfo {
             (arg.expression.as(ArrayExprSyntax.self)?.elements.tryMap {
               RawReprCaseInfo.parse(expr: $0.expression)
             })
-        else {
-          return nil
-        }
+        else { return nil }
         res.cases = cases
       default: return nil
       }
