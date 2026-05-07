@@ -36,11 +36,13 @@ public struct StoredProperty {
 
 public struct RawReprEnumInfo {
   public var rawType: String
+  public var isObjC: Bool
   public var isString: Bool  // Might be redondant but avoids bad suprises with shadowing i reckon
   public var cases: [RawReprCaseInfo]
 
-  public init(rawType: String, isString: Bool, cases: [RawReprCaseInfo]) {
+  public init(rawType: String, isObjC: Bool, isString: Bool, cases: [RawReprCaseInfo]) {
     self.rawType = rawType
+    self.isObjC = isObjC
     self.isString = isString
     self.cases = cases
   }
