@@ -346,10 +346,10 @@ DerivedConformance::deriveAdditiveArithmetic(ValueDecl *requirement) {
   if (checkAndDiagnoseDisallowedContext(requirement))
     return nullptr;
 
-  // auto &C = requirement->getASTContext();
-  // if (C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
-  //   return deriveAdditiveArithmeticViaMacro(*this, requirement);
-  // }
+  auto &C = requirement->getASTContext();
+  if (isMacroDerivationEnabled(C)) {
+    return deriveAdditiveArithmeticViaMacro(*this, requirement);
+  }
 
   if (requirement->getBaseName() == Context.getIdentifier("+"))
     return deriveMathOperator(*this, Add);
