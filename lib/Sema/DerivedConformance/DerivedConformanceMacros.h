@@ -61,12 +61,6 @@ ValueDecl *deriveRequirementViaMacro(DerivedConformance &der,
 TypeDecl *deriveTypeRequirementViaMacro(DerivedConformance &der,
                                         ModuleDecl *module, StringRef code);
 
-// ASTGen
-extern "C" bool swift_Macros_expandFreestandingMacroSynthetic(
-    BridgedASTContext cContext, const void *macroPtr, const char *discriminator,
-    uint8_t rawMacroRole, BridgedStringRef macroNameText,
-    BridgedStringRef argumentListText, BridgedStringRef *expandedSourceOutPtr);
-
 bool isMacroDerivationEnabled(const ASTContext &C);
 
 } // namespace swift
