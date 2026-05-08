@@ -60,6 +60,14 @@ extension RawReprCaseInfo {
     guard seen == expected else { return nil }
     return res
   }
+
+  public func getRawValueDesc() -> String {
+    let expr: ExprSyntax =
+      """
+      \(raw: rawValue)
+      """
+    return expr.description
+  }
 }
 
 extension RuntimeVersionCheck {
@@ -143,7 +151,7 @@ extension RawReprEnumInfo {
 func getSwitchExpr(_ info: RawReprEnumInfo) -> String {
   if info.isString {
     return
-      "_findStringSwitchCase(cases: [\(info.cases.map { "\(raw: $0.rawValue)" as ExprSyntax }.map { $0.description }.joined(separator: ", "))], string: rawValue)"
+      "_findStringSwitchCase(cases: [\(info.cases.map { $0.getRawValueDesc() }.joined(separator: ", "))], string: rawValue)"
   }
   return "rawValue"
 }
@@ -152,7 +160,7 @@ func getSwitchCases(_ info: RawReprEnumInfo) -> [(String, RawReprCaseInfo)] {
   if info.isString {
     return info.cases.enumerated().map { (i, c) in (String(i), c) }
   }
-  return info.cases.map { (("\(raw: $0.rawValue)" as ExprSyntax).description, $0) }
+  return info.cases.map { ($0.getRawValueDesc(), $0) }
 }
 
 func getInitStatementForCase(_ c: RawReprCaseInfo) -> String {
@@ -189,7 +197,27 @@ func deriveInit(_ info: RawReprEnumInfo) -> String {
 }
 
 func deriveRawValue(_ info: RawReprEnumInfo) -> String {
-  fatalError()
+  if info.isObjC {
+    return
+      """
+      var rawValue: RawValue {
+        return unsafe unsafeBitCast(self, to: RawValue.self)
+      }
+      """
+  }
+  return
+    """
+    var rawValue: RawValue {
+      switch self {
+      \(info.cases.map {
+        return
+          """
+          case .\($0.name): return \($0.getRawValueDesc())
+          """
+      }.joined(separator: "\n"))
+      }
+    }
+    """
 }
 
 public struct DeriveRawRepresentableMacro: DeclarationMacro {
