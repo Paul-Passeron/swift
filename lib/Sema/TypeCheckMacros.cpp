@@ -1244,16 +1244,42 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
     );
 
     // Builtin macros are handled via ASTGen.
-    auto *astGenSourceFile = sourceFile->getExportedSourceFile();
+    void *astGenSourceFile = nullptr;
+    SourceLoc startLoc = SourceLoc();
+
+
+    // Implicit macro declaration are synthesized by the compiler and
+    // have wrong `SourceLoc`s / `SourceFile`s for name-lookup purposes.
+    // Macro expansion looks for the node in the source file so we need to
+    // provide the right ones
+    if (expansion->getASTNode().isImplicit()) {
+      // TODO: formalize the way we get the right location
+      // for implicit macros
+      auto endLoc = expansion->getSourceRange().End;
+      auto bufferID = ctx.SourceMgr.findBufferContainingLoc(endLoc);
+      startLoc = ctx.SourceMgr.getRangeForBuffer(bufferID).getStart();
+      // We suppose that the synthesized macro is in its own source file,
+      // uniquely bound to bufferID.
+      auto SFs = ctx.SourceMgr.getSourceFilesForBufferID(bufferID);
+      assert(SFs.size() == 1);
+      auto *SF = SFs[0];
+      astGenSourceFile = SF->getExportedSourceFile();
+    } else {
+      startLoc = expansion->getSourceRange().Start;
+      astGenSourceFile = sourceFile->getExportedSourceFile();
+    }
+
     if (!astGenSourceFile)
       return nullptr;
+
+    assert(startLoc.isValid());
 
     BridgedStringRef evaluatedSourceOut{nullptr, 0};
     assert(!externalDef.isError());
     swift_Macros_expandFreestandingMacro(
         ctx, externalDef.get(), discriminator->c_str(),
         getRawMacroRole(macroRole), astGenSourceFile,
-        expansion->getSourceRange().Start.getOpaquePointerValue(),
+        startLoc.getOpaquePointerValue(),
         &evaluatedSourceOut);
     if (!evaluatedSourceOut.unbridged().data())
       return nullptr;
