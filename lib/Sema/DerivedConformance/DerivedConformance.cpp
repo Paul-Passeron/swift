@@ -11,9 +11,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "DerivedConformance.h"
+#include "CodeSynthesis.h"
 #include "TypeCheckConcurrency.h"
 #include "TypeChecker.h"
+#include "swift/AST/ASTContext.h"
+#include "swift/AST/ASTMangler.h"
 #include "swift/AST/ASTPrinter.h"
+#include "swift/AST/AccessorKind.h"
 #include "swift/AST/ConformanceLookup.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/Expr.h"
@@ -25,6 +29,7 @@
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
 #include "swift/ClangImporter/ClangModule.h"
+#include <string>
 
 using namespace swift;
 
@@ -995,4 +1000,179 @@ bool swift::memberwiseAccessorsRequireActorIsolation(NominalTypeDecl *nominal) {
   }
 
   return false;
+}
+
+bool swift::isMacroDerivationEnabled(const ASTContext &C) {
+  return C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros);
+}
+
+/// Returns a unique name for the buffer being created for `derived`
+/// conformance.
+static std::string getUniqueBufferNameForDerivation(DerivedConformance &derived,
+                                                    ValueDecl *requirement) {
+
+  static unsigned int index = 0;
+  std::string res = "__derivation_macro__";
+  res += derived.Nominal->getNameStr();
+  res += "@";
+  res += requirement->getBaseName().getIdentifier().str();
+  res += "__buffer_";
+  res += std::to_string(index);
+  return res;
+}
+
+/// Writes `code` into a source buffer, wires up the GeneratedSourceInfo for
+/// name lookup and returns the buffer ID.
+unsigned int static createSynthesizedBufferForDerivation(
+    DerivedConformance &derived, ValueDecl *requirement, SourceLoc atLoc,
+    StringRef code) {
+  auto *parentDC = derived.getConformanceContext();
+  auto &C = parentDC->getASTContext();
+
+  // Creating the buffer containing `code`
+  auto bufferID =
+      C.SourceMgr.addNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+          code, getUniqueBufferNameForDerivation(derived, requirement)));
+
+  // Setting up the GSI
+  // The way the GSI is sets up means that the start location of the expansion
+  //  is the one returned by `getValidParentSourceLocForDerivation` and
+  // the end location is a location contained in its own buffer.
+  GeneratedSourceInfo info;
+  info.kind = GeneratedSourceInfo::Kind::DeclarationMacroExpansion;
+  info.originalSourceRange = CharSourceRange(atLoc, 0);
+  info.generatedSourceRange = C.SourceMgr.getRangeForBuffer(bufferID);
+  info.astNode = ASTNode(derived.ConformanceDecl).getOpaqueValue();
+  info.declContext = parentDC;
+  C.SourceMgr.setGeneratedSourceInfo(bufferID, info);
+
+  return bufferID;
+}
+
+/// This function expects a bufferID containing a single macro expansion decl,
+/// to be parsed and returned
+static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &C,
+                                                     ModuleDecl *parentModule,
+                                                     unsigned int bufferID) {
+  auto *SF = new (C)
+      SourceFile(*parentModule, SourceFileKind::MacroExpansion, bufferID);
+  SF->setImports({});
+  auto decls = SF->getTopLevelDecls();
+  assert(decls.size() == 1);
+  auto *decl = decls[0];
+  decl->setImplicit();
+  auto *expansion = dyn_cast<MacroExpansionDecl>(decl);
+  assert(expansion);
+  return expansion;
+}
+
+/// This function provides the location to use when plumbing the synthesized
+/// macro expansion with its parent context for name lookup
+static SourceLoc
+getValidParentSourceLocForDerivation(DerivedConformance &derived) {
+  auto atLoc = derived.ConformanceDecl->getEndLoc();
+  assert(atLoc.isValid() && "Conformance loc is invalid");
+  return atLoc;
+}
+
+static void copyAccessFromNominal(ValueDecl *decl, NominalTypeDecl *nominal) {
+  if (decl->hasAccess()) {
+    decl->copyFormalAccessFrom(nominal,
+                               /*sourceIsParentContext=*/true);
+  } else {
+    decl->overwriteAccess(nominal->getFormalAccess());
+  }
+}
+
+/// Function supposed to be called for every ASTNode produced by the expansion
+/// of a synthesized macro declaration.
+///  It is generally used to set-up these declarations but also to return a
+///  valid `ValueDecl *` if the node could be a witness.
+static ValueDecl *
+handleASTNodeForDerivation(ASTContext &C, DerivedConformance &derived,
+                           ASTNode node,
+                           bool getterShouldBeImmutableComputed = true) {
+  auto *decl = node.dyn_cast<Decl *>();
+
+  // Building the scope tree manually
+  auto bufferID = C.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
+  auto *SF = C.SourceMgr.getSourceFilesForBufferID(
+      bufferID)[0]; // We assume there is only on SF here.
+  auto scope = SF->getScope();
+  scope.buildFullyExpandedTree();
+
+  if (isa<PatternBindingDecl>(decl)) {
+    // No particular set-up needed and definitely not a witness, we can skip it.
+    return nullptr;
+  }
+
+  auto *vdecl = dyn_cast<ValueDecl>(decl);
+  if (!vdecl)
+    return nullptr;
+
+  // Setting up the correct access
+  copyAccessFromNominal(vdecl, derived.Nominal);
+
+  // Handling function decls
+  if (auto *fdecl = dyn_cast<AbstractFunctionDecl>(vdecl)) {
+    addNonIsolatedToSynthesized(derived, fdecl);
+
+    // FIXME: This line is needed when building the stdlib, causing some linking
+    // errors on the witnesses it hasn't been called. We'd like to get rid of
+    // it so that the body is synthesized only if needed.
+    (void)fdecl->getMacroExpandedBody();
+  }
+
+  // Handling var decls
+  else if (auto *var_decl = dyn_cast<VarDecl>(vdecl)) {
+    // In all derivation cases for the moment, the getter of a
+    // derived var decl should be immutable computed, so the default
+    // value of this flag is true
+    if (getterShouldBeImmutableComputed)
+      var_decl->setImplInfo(StorageImplInfo::getImmutableComputed());
+
+    // If it has a getter, then we set it up properly
+    if (auto *getter = var_decl->getAccessor(AccessorKind::Get)) {
+      getter->setImplicit();
+      getter->setSynthesized();
+      copyAccessFromNominal(getter, derived.Nominal);
+    }
+  }
+
+  return vdecl;
+}
+
+ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &derived,
+                                     ValueDecl *requirement, StringRef code) {
+  auto *parentDC = derived.getConformanceContext();
+  auto &C = parentDC->getASTContext();
+
+  // Setting up the MacroExpansionDecl
+  auto loc = getValidParentSourceLocForDerivation(derived);
+  auto bufferID =
+      createSynthesizedBufferForDerivation(derived, requirement, loc, code);
+  auto *expansion =
+      parseSynthesizedMacroDecl(C, requirement->getModuleContext(), bufferID);
+
+  // Modifying the expansion info so that name lookup doesn't fail
+
+  auto *info = expansion->getExpansionInfo();
+  info->SigilLoc = loc;
+  info->MacroNameLoc = DeclNameLoc(loc);
+
+  // Adding the macro as a member to the conformance context directly means
+  // that all the decls it expands into will also be members.
+  derived.addMemberToConformanceContext(expansion, nullptr);
+
+  // We find the expanded `ValueDecl *` and return it. There should only ever be a
+  // single one
+  ValueDecl *val = nullptr;
+  expansion->forEachExpandedNode([&](ASTNode node) {
+    if (val) return;
+    if (auto vdecl = handleASTNodeForDerivation(C, derived, node)) {
+      val = vdecl;
+    }
+  });
+
+  return val;
 }

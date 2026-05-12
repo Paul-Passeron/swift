@@ -465,6 +465,17 @@ public:
 /// because they involve mutable state.
 bool memberwiseAccessorsRequireActorIsolation(NominalTypeDecl *nominal);
 
+// Derivation via macros
+
+/// Returns `true` if the `DeriveConformancesViaMacros` experimental feature
+/// flag is enabled.
+bool isMacroDerivationEnabled(const ASTContext &C);
+
+/// Returns the value decl expanded from the macro in `code` in the context of the
+/// `derived` derived conformance.
+ValueDecl *deriveRequirementViaMacro(DerivedConformance &derived,
+                                     ValueDecl *requirement, StringRef code);
+
 } // namespace swift
 
 #endif
