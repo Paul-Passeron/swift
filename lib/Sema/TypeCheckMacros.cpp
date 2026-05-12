@@ -15,6 +15,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TypeCheckMacros.h"
+#include "DerivedConformance/DerivedConformance.h"
 #include "TypeCheckType.h"
 #include "TypeChecker.h"
 #include "swift/ABI/MetadataValues.h"
@@ -1253,10 +1254,8 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
     // Macro expansion looks for the node in the source file so we need to
     // provide the right ones
     if (expansion->getASTNode().isImplicit()) {
-      // TODO: formalize the way we get the right location
-      // for implicit macros
-      auto endLoc = expansion->getSourceRange().End;
-      auto bufferID = ctx.SourceMgr.findBufferContainingLoc(endLoc);
+      auto originalLoc = retrieveOriginalLocFromSynthesizedMacroExpansion(expansion);
+      auto bufferID = ctx.SourceMgr.findBufferContainingLoc(originalLoc);
       startLoc = ctx.SourceMgr.getRangeForBuffer(bufferID).getStart();
       // We suppose that the synthesized macro is in its own source file,
       // uniquely bound to bufferID.

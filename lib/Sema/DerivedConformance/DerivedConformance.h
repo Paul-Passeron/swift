@@ -19,6 +19,7 @@
 #define SWIFT_SEMA_DERIVEDCONFORMANCE_DERIVEDCONFORMANCE_H
 
 #include "swift/AST/Builtins.h"
+#include "swift/AST/Decl.h"
 #include "swift/Basic/LLVM.h"
 #include <utility>
 
@@ -475,6 +476,9 @@ bool isMacroDerivationEnabled(const ASTContext &C);
 /// `derived` derived conformance.
 ValueDecl *deriveRequirementViaMacro(DerivedConformance &derived,
                                      ValueDecl *requirement, StringRef code);
+
+/// Returns a source location in the synthesized source buffer created for `expansion`.
+SourceLoc retrieveOriginalLocFromSynthesizedMacroExpansion(FreestandingMacroExpansion *expansion);
 
 } // namespace swift
 

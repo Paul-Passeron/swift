@@ -21,6 +21,7 @@
 #include "swift/AST/ConformanceLookup.h"
 #include "swift/AST/Decl.h"
 #include "swift/AST/Expr.h"
+#include "swift/AST/FreestandingMacroExpansion.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/Pattern.h"
 #include "swift/AST/ProtocolConformance.h"
@@ -1169,10 +1170,14 @@ ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &derived,
   ValueDecl *val = nullptr;
   expansion->forEachExpandedNode([&](ASTNode node) {
     if (val) return;
-    if (auto vdecl = handleASTNodeForDerivation(C, derived, node)) {
+    if (auto *vdecl = handleASTNodeForDerivation(C, derived, node)) {
       val = vdecl;
     }
   });
 
   return val;
+}
+
+SourceLoc swift::retrieveOriginalLocFromSynthesizedMacroExpansion(FreestandingMacroExpansion *expansion) {
+  return expansion->getSourceRange().End;
 }
