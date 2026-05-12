@@ -1019,6 +1019,7 @@ static std::string getUniqueBufferNameForDerivation(DerivedConformance &derived,
   res += requirement->getBaseName().getIdentifier().str();
   res += "__buffer_";
   res += std::to_string(index);
+  ++index;
   return res;
 }
 
@@ -1036,9 +1037,9 @@ unsigned int static createSynthesizedBufferForDerivation(
           code, getUniqueBufferNameForDerivation(derived, requirement)));
 
   // Setting up the GSI
-  // The way the GSI is sets up means that the start location of the expansion
-  //  is the one returned by `getValidParentSourceLocForDerivation` and
-  // the end location is a location contained in its own buffer.
+  // The way the GSI is set up means that the start location of the expansion
+  // is the one returned by `getValidParentSourceLocForDerivation` and the end
+  // location is a location contained in its own buffer.
   GeneratedSourceInfo info;
   info.kind = GeneratedSourceInfo::Kind::DeclarationMacroExpansion;
   info.originalSourceRange = CharSourceRange(atLoc, 0);
@@ -1050,15 +1051,15 @@ unsigned int static createSynthesizedBufferForDerivation(
   return bufferID;
 }
 
-/// This function expects a bufferID containing a single macro expansion decl,
-/// to be parsed and returned
+/// Expects a bufferID containing a single macro expansion decl, to be parsed
+/// and returned
 static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &C,
                                                      ModuleDecl *parentModule,
                                                      unsigned int bufferID) {
   auto *SF = new (C)
       SourceFile(*parentModule, SourceFileKind::MacroExpansion, bufferID);
-  SF->setImports({});
   auto decls = SF->getTopLevelDecls();
+  // Expect exactly one decl in the buffer
   assert(decls.size() == 1);
   auto *decl = decls[0];
   decl->setImplicit();
@@ -1067,84 +1068,85 @@ static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &C,
   return expansion;
 }
 
-/// This function provides the location to use when plumbing the synthesized
-/// macro expansion with its parent context for name lookup
+/// Provides the location to use when plumbing the synthesized  macro expansion
+/// with its parent context for name lookup
 static SourceLoc
 getValidParentSourceLocForDerivation(DerivedConformance &derived) {
   auto atLoc = derived.ConformanceDecl->getEndLoc();
-  assert(atLoc.isValid() && "Conformance loc is invalid");
+  assert(atLoc.isValid());
   return atLoc;
 }
 
+/// Used to copy the formal access from a `NominalTypeDecl`, wether it currently
+/// has access or not.
 static void copyAccessFromNominal(ValueDecl *decl, NominalTypeDecl *nominal) {
-  if (decl->hasAccess()) {
+  if (decl->hasAccess())
     decl->copyFormalAccessFrom(nominal,
                                /*sourceIsParentContext=*/true);
-  } else {
+  else
     decl->overwriteAccess(nominal->getFormalAccess());
-  }
 }
 
 /// Function supposed to be called for every ASTNode produced by the expansion
 /// of a synthesized macro declaration.
-///  It is generally used to set-up these declarations but also to return a
-///  valid `ValueDecl *` if the node could be a witness.
+/// It is generally used to set-up these declarations but also to return a
+/// valid `ValueDecl *` if the node could be a witness.
 static ValueDecl *
 handleASTNodeForDerivation(ASTContext &C, DerivedConformance &derived,
                            ASTNode node,
                            bool getterShouldBeImmutableComputed = true) {
   auto *decl = node.dyn_cast<Decl *>();
 
+  // No particular set up needed and definitely not a witness, we can skip it.
+  if (isa<PatternBindingDecl>(decl))
+    return nullptr;
+
   // Building the scope tree manually
   auto bufferID = C.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
   auto *SF = C.SourceMgr.getSourceFilesForBufferID(
-      bufferID)[0]; // We assume there is only on SF here.
+      bufferID)[0]; // We assume there is only on SourceFile here.
   auto scope = SF->getScope();
   scope.buildFullyExpandedTree();
 
-  if (isa<PatternBindingDecl>(decl)) {
-    // No particular set-up needed and definitely not a witness, we can skip it.
-    return nullptr;
-  }
-
-  auto *vdecl = dyn_cast<ValueDecl>(decl);
-  if (!vdecl)
+  auto *vDecl = dyn_cast<ValueDecl>(decl);
+  if (!vDecl)
     return nullptr;
 
   // Setting up the correct access
-  copyAccessFromNominal(vdecl, derived.Nominal);
+  copyAccessFromNominal(vDecl, derived.Nominal);
 
   // Handling function decls
-  if (auto *fdecl = dyn_cast<AbstractFunctionDecl>(vdecl)) {
-    addNonIsolatedToSynthesized(derived, fdecl);
+  if (auto *fDecl = dyn_cast<AbstractFunctionDecl>(vDecl)) {
+    addNonIsolatedToSynthesized(derived, fDecl);
 
-    // FIXME: This line is needed when building the stdlib, causing some linking
-    // errors on the witnesses it hasn't been called. We'd like to get rid of
-    // it so that the body is synthesized only if needed.
-    (void)fdecl->getMacroExpandedBody();
+    // FIXME: This call is needed when building the stdlib, otherwise causing
+    // some linking errors on the witnesses. Will eventually get rid of it so
+    // that the body is synthesized only if needed.
+    (void)fDecl->getMacroExpandedBody();
   }
 
   // Handling var decls
-  else if (auto *var_decl = dyn_cast<VarDecl>(vdecl)) {
+  else if (auto *varDecl = dyn_cast<VarDecl>(vDecl)) {
     // In all derivation cases for the moment, the getter of a
     // derived var decl should be immutable computed, so the default
     // value of this flag is true
     if (getterShouldBeImmutableComputed)
-      var_decl->setImplInfo(StorageImplInfo::getImmutableComputed());
+      varDecl->setImplInfo(StorageImplInfo::getImmutableComputed());
 
-    // If it has a getter, then we set it up properly
-    if (auto *getter = var_decl->getAccessor(AccessorKind::Get)) {
+    // If it has a getter, then set it up properly
+    if (auto *getter = varDecl->getAccessor(AccessorKind::Get)) {
       getter->setImplicit();
       getter->setSynthesized();
       copyAccessFromNominal(getter, derived.Nominal);
     }
   }
 
-  return vdecl;
+  return vDecl;
 }
 
 ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &derived,
-                                     ValueDecl *requirement, StringRef code) {
+                                            ValueDecl *requirement,
+                                            StringRef code) {
   auto *parentDC = derived.getConformanceContext();
   auto &C = parentDC->getASTContext();
 
@@ -1164,24 +1166,23 @@ ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &derived,
   // that all the decls it expands into will also be members.
   derived.addMemberToConformanceContext(expansion, nullptr);
 
-  // We find the expanded `ValueDecl *` and return it. There should only ever be a
+  // Find the expanded `ValueDecl *` and return it. There should only ever be a
   // single one
   ValueDecl *val = nullptr;
   expansion->forEachExpandedNode([&](ASTNode node) {
-    if (val) return;
-    if (auto *vdecl = handleASTNodeForDerivation(C, derived, node)) {
-      val = vdecl;
-    }
+    auto *vDecl = handleASTNodeForDerivation(C, derived, node);
+    if (vDecl && !val)
+      val = vDecl;
   });
 
-  // If val is null at this point it certainly means that the macro didn't resolve,
-  // which we should guard against
+  // val should not be null unless an error as occured, so we assert it isn't
   assert(val);
   return val;
 }
 
-SourceLoc swift::retrieveOriginalLocFromSynthesizedMacroExpansion(FreestandingMacroExpansion *expansion) {
-  // The way we set things up, the start loc belongs to the parent and the end to the
-  // original source range, so we return the end location
+SourceLoc swift::retrieveOriginalLocFromSynthesizedMacroExpansion(
+    FreestandingMacroExpansion *expansion) {
+  // The way it is currently setup, the start loc belongs to the parent and the
+  // end to the original source range, so we return the end location
   return expansion->getSourceRange().End;
 }

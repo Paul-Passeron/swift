@@ -1248,13 +1248,13 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
     void *astGenSourceFile = nullptr;
     SourceLoc startLoc = SourceLoc();
 
-
     // Implicit macro declaration are synthesized by the compiler and
     // have wrong `SourceLoc`s / `SourceFile`s for name-lookup purposes.
     // Macro expansion looks for the node in the source file so we need to
     // provide the right ones
     if (expansion->getASTNode().isImplicit()) {
-      auto originalLoc = retrieveOriginalLocFromSynthesizedMacroExpansion(expansion);
+      auto originalLoc =
+          retrieveOriginalLocFromSynthesizedMacroExpansion(expansion);
       auto bufferID = ctx.SourceMgr.findBufferContainingLoc(originalLoc);
       startLoc = ctx.SourceMgr.getRangeForBuffer(bufferID).getStart();
       // We suppose that the synthesized macro is in its own source file,
@@ -1268,8 +1268,7 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
       astGenSourceFile = sourceFile->getExportedSourceFile();
     }
 
-    if (!astGenSourceFile)
-      return nullptr;
+    if (!astGenSourceFile) return nullptr;
 
     assert(startLoc.isValid());
 
@@ -1278,8 +1277,7 @@ evaluateFreestandingMacro(FreestandingMacroExpansion *expansion,
     swift_Macros_expandFreestandingMacro(
         ctx, externalDef.get(), discriminator->c_str(),
         getRawMacroRole(macroRole), astGenSourceFile,
-        startLoc.getOpaquePointerValue(),
-        &evaluatedSourceOut);
+        startLoc.getOpaquePointerValue(), &evaluatedSourceOut);
     if (!evaluatedSourceOut.unbridged().data())
       return nullptr;
     evaluatedSource = llvm::MemoryBuffer::getMemBufferCopy(
