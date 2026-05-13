@@ -1012,14 +1012,11 @@ bool swift::isMacroDerivationEnabled(const ASTContext &C) {
 static std::string getUniqueBufferNameForDerivation(DerivedConformance &derived,
                                                     ValueDecl *requirement) {
 
-  static unsigned int index = 0;
   std::string res = "__derivation_macro__";
   res += derived.Nominal->getNameStr();
   res += "@";
   res += requirement->getBaseName().getIdentifier().str();
-  res += "__buffer_";
-  res += std::to_string(index);
-  ++index;
+  res += "__buffer";
   return res;
 }
 
@@ -1072,17 +1069,16 @@ static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &C,
 /// with its parent context for name lookup
 static SourceLoc
 getValidParentSourceLocForDerivation(DerivedConformance &derived) {
-  auto atLoc = derived.ConformanceDecl->getEndLoc();
-  assert(atLoc.isValid());
-  return atLoc;
+  auto loc = derived.ConformanceDecl->getEndLoc();
+  assert(loc.isValid());
+  return loc;
 }
 
 /// Used to copy the formal access from a `NominalTypeDecl`, wether it currently
 /// has access or not.
 static void copyAccessFromNominal(ValueDecl *decl, NominalTypeDecl *nominal) {
   if (decl->hasAccess())
-    decl->copyFormalAccessFrom(nominal,
-                               /*sourceIsParentContext=*/true);
+    decl->copyFormalAccessFrom(nominal, true);
   else
     decl->overwriteAccess(nominal->getFormalAccess());
 }
