@@ -22,9 +22,14 @@
 #include "swift/AST/ProtocolConformance.h"
 #include "swift/AST/SourceFile.h"
 #include "swift/AST/Stmt.h"
+#include "swift/AST/Type.h"
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
 #include "swift/ClangImporter/ClangModule.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/YAMLParser.h"
+#include <string>
 
 using namespace swift;
 
@@ -132,10 +137,10 @@ bool DerivedConformance::derivesProtocolConformance(
         // conformance.
       case KnownDerivableProtocolKind::Equatable:
         return canDeriveEquatable(DC, Nominal);
-      
+
       case KnownDerivableProtocolKind::Comparable:
         return !enumDecl->hasPotentiallyUnavailableCaseValue()
-            && canDeriveComparable(DC, enumDecl); 
+            && canDeriveComparable(DC, enumDecl);
 
         // "Simple" enums without availability attributes can explicitly derive
         // a CaseIterable conformance.
@@ -204,7 +209,7 @@ void DerivedConformance::tryDiagnoseFailedDerivation(DeclContext *DC,
   auto knownProtocol = protocol->getKnownProtocolKind();
   if (!knownProtocol)
     return;
-  
+
   if (*knownProtocol == KnownProtocolKind::Equatable) {
     tryDiagnoseFailedEquatableDerivation(DC, nominal);
   }
@@ -358,7 +363,7 @@ ValueDecl *DerivedConformance::getDerivableRequirement(NominalTypeDecl *nominal,
   if (auto func = dyn_cast<FuncDecl>(requirement)) {
     if (func->isOperator() && name.getBaseName() == "<")
       return getRequirement(KnownProtocolKind::Comparable);
-    
+
     if (func->isOperator() && name.getBaseName() == "==")
       return getRequirement(KnownProtocolKind::Equatable);
 
@@ -644,10 +649,10 @@ bool DerivedConformance::checkAndDiagnoseDisallowedContext(
 /// \p C The AST context.
 /// \p lhsExpr The first expression to compare for equality.
 /// \p rhsExpr The second expression to compare for equality.
-/// \p guardReturnValue The expression to return if the two sides are not equal 
+/// \p guardReturnValue The expression to return if the two sides are not equal
 GuardStmt *DerivedConformance::returnIfNotEqualGuard(ASTContext &C,
                                         Expr *lhsExpr,
-                                        Expr *rhsExpr, 
+                                        Expr *rhsExpr,
                                         Expr *guardReturnValue) {
   SmallVector<StmtConditionElement, 1> conditions;
   SmallVector<ASTNode, 1> statements;
@@ -674,7 +679,7 @@ GuardStmt *DerivedConformance::returnIfNotEqualGuard(ASTContext &C,
 /// returns `false`.
 /// \p C The AST context.
 /// \p lhsExpr The first expression to compare for equality.
-/// \p rhsExpr The second expression to compare for equality. 
+/// \p rhsExpr The second expression to compare for equality.
 GuardStmt *DerivedConformance::returnFalseIfNotEqualGuard(ASTContext &C,
                                         Expr *lhsExpr,
                                         Expr *rhsExpr) {
@@ -712,7 +717,7 @@ GuardStmt *DerivedConformance::returnNilIfFalseGuardTypeChecked(ASTContext &C,
 /// returns lhs < rhs.
 /// \p C The AST context.
 /// \p lhsExpr The first expression to compare for equality.
-/// \p rhsExpr The second expression to compare for equality. 
+/// \p rhsExpr The second expression to compare for equality.
 GuardStmt *DerivedConformance::returnComparisonIfNotEqualGuard(ASTContext &C,
                                         Expr *lhsExpr,
                                         Expr *rhsExpr) {
@@ -995,4 +1000,152 @@ bool swift::memberwiseAccessorsRequireActorIsolation(NominalTypeDecl *nominal) {
   }
 
   return false;
+}
+
+static std::string escapeString(StringRef str) {
+  return llvm::yaml::escape(str);
+}
+
+static std::string getLiteralExprAsString(const LiteralExpr *lit) {
+  if (isa<NilLiteralExpr>(lit)) {
+    return "nil";
+  }
+
+  if (auto num = dyn_cast<NumberLiteralExpr>(lit)) {
+    if (num->isNegative()) {
+      std::string res = "-";
+      res += num->getDigitsText();
+      return res;
+    }
+    return num->getDigitsText().str();
+  }
+
+  if (auto strlit = dyn_cast<StringLiteralExpr>(lit)) {
+    // Escape twice because we are getting the unescaped version and we want to
+    // write it as a string literal inside a string literal.
+    std::string res = "\\\"";
+    res += escapeString(escapeString(strlit->getValue()));
+    res += "\\\"";
+    return res;
+  }
+
+  if (auto flt = dyn_cast<FloatLiteralExpr>(lit)) {
+    llvm::SmallVector<char, 6> str;
+    flt->getValue().toString(str);
+    return std::string(str.data(), str.size());
+  }
+
+  if (auto boolean = dyn_cast<BooleanLiteralExpr>(lit)) {
+    if (boolean->getValue())
+      return "true";
+    return "false";
+  }
+
+  llvm_unreachable("Unsupported literal expr");
+}
+
+static std::string getCaseInfo(const EnumElementDecl *decl) {
+  std::string sb;
+  sb += "CaseInfo(name: \"";
+  sb += decl->getNameStr();
+  sb += "\", rawValueExpr: ";
+  if (const auto *expr = decl->getRawValueExpr()) {
+    sb += "\"";
+    sb += getLiteralExprAsString(expr);
+    sb += "\"";
+  } else {
+    sb += "nil";
+  }
+  // TODO: actually compute availability
+  sb += ", availability: nil";
+  sb += ")";
+  return sb;
+}
+
+static std::string getEnumTypeKind(const EnumDecl *ty) {
+  std::string sb;
+  sb += "enumLike(EnumTypeInfo(rawType: ";
+  if (const auto raw = ty->getRawType()) {
+    sb += "\"";
+    sb += raw->getString();
+    sb += "\"";
+  } else {
+    sb += "nil";
+  }
+  sb += ", isObjC: ";
+  sb += ty->isObjC() ? "true" : "false";
+  sb += ", cases: [";
+  bool first = true;
+  for (const auto elem: ty->getAllElements()) {
+    if (!first) sb += ", ";
+    first = false;
+    sb += getCaseInfo(elem);
+  }
+  sb += "]))";
+  return sb;
+}
+
+static std::string getStoredProperty(const VarDecl *property) {
+  std::string sb;
+  sb += "StoredProperty(name: \"";
+  sb += property->getNameStr();
+  sb += "\", typeName: \"";
+  sb += property->getTypeInContext().getString();
+  sb += "\", isVar: ";
+  sb +=
+      property->getIntroducer() == VarDecl::Introducer::Var ? "true" : "false";
+  sb += ", isStatic: ";
+  sb += property->isStatic() ? "true" : "false";
+  sb += ")";
+  return sb;
+}
+
+static std::string getStructTypeKind(const StructDecl *ty)  {
+  std::string sb;
+  sb += "structLike(StructTypeInfos(properties: [";
+  bool first = true;
+  for (const auto *property: ty->getStoredProperties()) {
+    if (!first) sb += ", ";
+    first = false;
+    sb += getStoredProperty(property);
+  }
+  sb += "]))";
+  return sb;
+}
+
+static std::string getNominalTypeKind(NominalTypeDecl *ty) {
+  if (auto enumDecl = dyn_cast<EnumDecl>(ty))
+    return getEnumTypeKind(enumDecl);
+
+  if (auto structDecl = dyn_cast<StructDecl>(ty))
+    return getStructTypeKind(structDecl);
+
+  llvm_unreachable("todo");
+}
+
+std::string swift::getNominalTypeInfo(DerivedConformance &derived) {
+  // The simplest way of creating an easily parsable string in macro is to write
+  // the type info as Swift syntax.
+
+  std::string sb;
+
+  bool isUnsafe =
+      derived.Conformance->getExplicitSafety() == ExplicitSafety::Unsafe;
+
+  sb += "NominalTypeInfo(name: \"";
+  sb += derived.Nominal->getNameStr();
+  sb += "\", kind: ";
+  sb += getNominalTypeKind(derived.Nominal);
+  sb += ", isUnsafe: ";
+  sb += isUnsafe ? "true" : "false";
+  sb += ")";
+
+  return sb;
+}
+
+std::string swift::getNominalTypeInfoAsStringLit(DerivedConformance &derived) {
+  std::string sb = "\"";
+  sb += escapeString(getNominalTypeInfo(derived));
+  sb += "\"";
+  return sb;
 }
