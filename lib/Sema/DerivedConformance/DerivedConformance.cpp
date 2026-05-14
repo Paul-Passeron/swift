@@ -1066,9 +1066,13 @@ static std::string getEnumTypeKind(const EnumDecl *ty) {
   std::string sb;
   sb += "enumLike(EnumTypeInfo(rawType: ";
   if (const auto raw = ty->getRawType()) {
-    sb += "\"";
-    sb += raw->getString();
-    sb += "\"";
+    if (ty->getASTContext().getStringType()->isEqual(raw)) {
+      sb += "str";
+    } else {
+      sb += "\"";
+      sb += raw->getString();
+      sb += "\"";
+    }
   } else {
     sb += "nil";
   }
@@ -1102,7 +1106,7 @@ static std::string getStoredProperty(const VarDecl *property) {
 
 static std::string getStructTypeKind(const StructDecl *ty)  {
   std::string sb;
-  sb += "structLike(StructTypeInfos(properties: [";
+  sb += "structLike(StructTypeInfo(properties: [";
   bool first = true;
   for (const auto *property: ty->getStoredProperties()) {
     if (!first) sb += ", ";
