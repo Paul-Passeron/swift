@@ -1045,8 +1045,7 @@ static std::string getLiteralExprAsString(const LiteralExpr *lit) {
 }
 
 static std::string getCaseInfoString(const EnumElementDecl *decl) {
-  std::string sb;
-  sb += "CaseInfo(name: \"";
+  std::string sb = "CaseInfo(name: \"";
   sb += decl->getNameStr();
   sb += "\", rawValueExpr: ";
   if (const auto *expr = decl->getRawValueExpr()) {
@@ -1063,8 +1062,7 @@ static std::string getCaseInfoString(const EnumElementDecl *decl) {
 }
 
 static std::string getEnumTypeKindString(const EnumDecl *ty) {
-  std::string sb;
-  sb += "enumLike(EnumTypeInfo(rawType: ";
+  std::string sb = "enumLike(EnumTypeInfo(rawType: ";
   if (const auto raw = ty->getRawType()) {
     if (ty->getASTContext().getStringType()->isEqual(raw)) {
       sb += "str";
@@ -1090,8 +1088,7 @@ static std::string getEnumTypeKindString(const EnumDecl *ty) {
 }
 
 static std::string getStoredPropertyString(const VarDecl *property) {
-  std::string sb;
-  sb += "StoredProperty(name: \"";
+  std::string sb = "StoredProperty(name: \"";
   sb += property->getNameStr();
   sb += "\", typeName: \"";
   sb += property->getTypeInContext().getString();
@@ -1105,8 +1102,7 @@ static std::string getStoredPropertyString(const VarDecl *property) {
 }
 
 static std::string getStructTypeKindString(const StructDecl *ty)  {
-  std::string sb;
-  sb += "structLike(StructTypeInfo(properties: [";
+  std::string sb = "structLike(StructTypeInfo(properties: [";
   bool first = true;
   for (const auto *property: ty->getStoredProperties()) {
     if (!first) sb += ", ";
@@ -1131,12 +1127,10 @@ std::string swift::getNominalTypeInfoString(DerivedConformance &derived) {
   // The simplest way of creating an easily parsable string in macro is to write
   // the type info as Swift syntax.
 
-  std::string sb;
-
   bool isUnsafe =
       derived.Conformance->getExplicitSafety() == ExplicitSafety::Unsafe;
 
-  sb += "NominalTypeInfo(name: \"";
+  std::string sb = "NominalTypeInfo(name: \"";
   sb += derived.Nominal->getNameStr();
   sb += "\", kind: ";
   sb += getNominalTypeKindString(derived.Nominal);
