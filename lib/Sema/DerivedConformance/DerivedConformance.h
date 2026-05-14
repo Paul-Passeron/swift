@@ -467,11 +467,13 @@ bool memberwiseAccessorsRequireActorIsolation(NominalTypeDecl *nominal);
 
 // Derivation via macros
 
-/// Get a string representing the nominal type we are deriving a conformance for. This is supposed to produce valid swift syntax.
-std::string getNominalTypeInfo(DerivedConformance &derived);
+/// Get a string representing the nominal type we are deriving a conformance
+/// for. This is supposed to produce valid swift syntax.
+std::string getNominalTypeInfoString(DerivedConformance &derived);
 
-/// Get a string representing the nominal type info as `getNominalTypeInfo` does but escaped and quoted
-std::string getNominalTypeInfoAsStringLit(DerivedConformance &derived);
+/// Get a string representing the nominal type info as
+/// `getNominalTypeInfoString` does but escaped and quoted
+std::string getNominalTypeInfoStringAsStringLit(DerivedConformance &derived);
 
 } // namespace swift
 

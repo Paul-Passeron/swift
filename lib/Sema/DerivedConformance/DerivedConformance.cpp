@@ -1044,7 +1044,7 @@ static std::string getLiteralExprAsString(const LiteralExpr *lit) {
   llvm_unreachable("Unsupported literal expr");
 }
 
-static std::string getCaseInfo(const EnumElementDecl *decl) {
+static std::string getCaseInfoString(const EnumElementDecl *decl) {
   std::string sb;
   sb += "CaseInfo(name: \"";
   sb += decl->getNameStr();
@@ -1062,7 +1062,7 @@ static std::string getCaseInfo(const EnumElementDecl *decl) {
   return sb;
 }
 
-static std::string getEnumTypeKind(const EnumDecl *ty) {
+static std::string getEnumTypeKindString(const EnumDecl *ty) {
   std::string sb;
   sb += "enumLike(EnumTypeInfo(rawType: ";
   if (const auto raw = ty->getRawType()) {
@@ -1083,13 +1083,13 @@ static std::string getEnumTypeKind(const EnumDecl *ty) {
   for (const auto elem: ty->getAllElements()) {
     if (!first) sb += ", ";
     first = false;
-    sb += getCaseInfo(elem);
+    sb += getCaseInfoString(elem);
   }
   sb += "]))";
   return sb;
 }
 
-static std::string getStoredProperty(const VarDecl *property) {
+static std::string getStoredPropertyString(const VarDecl *property) {
   std::string sb;
   sb += "StoredProperty(name: \"";
   sb += property->getNameStr();
@@ -1104,30 +1104,30 @@ static std::string getStoredProperty(const VarDecl *property) {
   return sb;
 }
 
-static std::string getStructTypeKind(const StructDecl *ty)  {
+static std::string getStructTypeKindString(const StructDecl *ty)  {
   std::string sb;
   sb += "structLike(StructTypeInfo(properties: [";
   bool first = true;
   for (const auto *property: ty->getStoredProperties()) {
     if (!first) sb += ", ";
     first = false;
-    sb += getStoredProperty(property);
+    sb += getStoredPropertyString(property);
   }
   sb += "]))";
   return sb;
 }
 
-static std::string getNominalTypeKind(NominalTypeDecl *ty) {
+static std::string getNominalTypeKindString(NominalTypeDecl *ty) {
   if (auto enumDecl = dyn_cast<EnumDecl>(ty))
-    return getEnumTypeKind(enumDecl);
+    return getEnumTypeKindString(enumDecl);
 
   if (auto structDecl = dyn_cast<StructDecl>(ty))
-    return getStructTypeKind(structDecl);
+    return getStructTypeKindString(structDecl);
 
   llvm_unreachable("todo");
 }
 
-std::string swift::getNominalTypeInfo(DerivedConformance &derived) {
+std::string swift::getNominalTypeInfoString(DerivedConformance &derived) {
   // The simplest way of creating an easily parsable string in macro is to write
   // the type info as Swift syntax.
 
@@ -1139,7 +1139,7 @@ std::string swift::getNominalTypeInfo(DerivedConformance &derived) {
   sb += "NominalTypeInfo(name: \"";
   sb += derived.Nominal->getNameStr();
   sb += "\", kind: ";
-  sb += getNominalTypeKind(derived.Nominal);
+  sb += getNominalTypeKindString(derived.Nominal);
   sb += ", isUnsafe: ";
   sb += isUnsafe ? "true" : "false";
   sb += ")";
@@ -1147,9 +1147,9 @@ std::string swift::getNominalTypeInfo(DerivedConformance &derived) {
   return sb;
 }
 
-std::string swift::getNominalTypeInfoAsStringLit(DerivedConformance &derived) {
+std::string swift::getNominalTypeInfoStringAsStringLit(DerivedConformance &derived) {
   std::string sb = "\"";
-  sb += escapeString(getNominalTypeInfo(derived));
+  sb += escapeString(getNominalTypeInfoString(derived));
   sb += "\"";
   return sb;
 }
