@@ -1036,7 +1036,7 @@ unsigned int static createSynthesizedBufferForDerivation(
   // Setting up the GSI
   // The way the GSI is set up means that the start location of the expansion
   // is the one returned by `getValidParentSourceLocForDerivation` and the end
-  // location is a location contained in its own buffer.
+  // location is contained in its own buffer.
   GeneratedSourceInfo info;
   info.kind = GeneratedSourceInfo::Kind::DeclarationMacroExpansion;
   info.originalSourceRange = CharSourceRange(atLoc, 0);
@@ -1049,7 +1049,7 @@ unsigned int static createSynthesizedBufferForDerivation(
 }
 
 /// Expects a bufferID containing a single macro expansion decl, to be parsed
-/// and returned
+/// and returned.
 static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &C,
                                                      ModuleDecl *parentModule,
                                                      unsigned int bufferID) {
@@ -1066,7 +1066,7 @@ static MacroExpansionDecl *parseSynthesizedMacroDecl(ASTContext &C,
 }
 
 /// Provides the location to use when plumbing the synthesized  macro expansion
-/// with its parent context for name lookup
+/// with its parent context for name lookup.
 static SourceLoc
 getValidParentSourceLocForDerivation(DerivedConformance &derived) {
   auto loc = derived.ConformanceDecl->getEndLoc();
