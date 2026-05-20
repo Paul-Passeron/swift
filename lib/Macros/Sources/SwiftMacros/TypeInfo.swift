@@ -43,6 +43,7 @@ public struct StoredProperty: Equatable {
   public let isVar: Bool
   public let isStatic: Bool
 }
+
 public struct EnumTypeInfo: Equatable {
   public let rawType: RawTypeKind?
   public let isObjC: Bool
@@ -61,6 +62,7 @@ public enum RawTypeKind: Equatable {
 
 public struct CaseInfo: Equatable {
   public let name: String
+  public let associatedValues: [String?]
   public let rawValueExpr: String?
   public let availability: RuntimeVersionCheck?
 }
@@ -308,6 +310,7 @@ struct NominalTypeInfoParser {
     // Expected:
     // CaseInfo(
     //     name: <string>,
+    //     associatedValues: [<nil | string>, ...],
     //     rawValueExpr: <nil | string>,
     //     availability: <nil | runtime version check>)
 
@@ -319,15 +322,19 @@ struct NominalTypeInfoParser {
     }
 
     let args: [LabeledExprSyntax] = fcall.arguments.map { $0 }
-    guard args.count == 3 else {
+    guard args.count == 4 else {
       return nil
     }
 
     let nameArg = args[0]
-    let rawValueExprArg = args[1]
-    let availabilityArg = args[2]
+    let associatedValuesArg = args[1]
+    let rawValueExprArg = args[2]
+    let availabilityArg = args[3]
 
     guard nameArg.label?.trimmedDescription ?? "" == "name" else {
+      return nil
+    }
+    guard associatedValuesArg.label?.trimmedDescription ?? "" == "associatedValues" else {
       return nil
     }
     guard rawValueExprArg.label?.trimmedDescription ?? "" == "rawValueExpr" else {
@@ -338,6 +345,13 @@ struct NominalTypeInfoParser {
     }
 
     guard let name = Self.parseString(expr: nameArg.expression) else {
+      return nil
+    }
+    guard
+      let associatedValues = Self.parseArrayOf(
+        expr: associatedValuesArg.expression,
+        of: { expr in Self.parseOptOf(expr: expr, of: Self.parseString) })
+    else {
       return nil
     }
     guard
@@ -353,7 +367,9 @@ struct NominalTypeInfoParser {
       return nil
     }
 
-    return CaseInfo(name: name, rawValueExpr: rawValueExpr, availability: availability)
+    return CaseInfo(
+      name: name, associatedValues: associatedValues, rawValueExpr: rawValueExpr,
+      availability: availability)
   }
 
   /// Parses a RuntimeVersionCheck from an expression syntax node, returns nil
@@ -366,7 +382,7 @@ struct NominalTypeInfoParser {
     guard let fcall = node.as(FunctionCallExprSyntax.self) else {
       return nil
     }
-    guard fcall.calledExpression.trimmedDescription == "CaseInfo" else {
+    guard fcall.calledExpression.trimmedDescription == "RuntimeVersionCheck" else {
       return nil
     }
 
@@ -484,5 +500,11 @@ extension NominalTypeInfo {
 
   public static func from(stringLiteral: StringLiteralExprSyntax) -> Self? {
     NominalTypeInfoParser.parse(stringLiteral: stringLiteral)
+  }
+}
+
+extension EnumTypeInfo {
+  public func hasAssociatedValues() -> Bool {
+    self.cases.contains(where: { !$0.associatedValues.isEmpty })
   }
 }
