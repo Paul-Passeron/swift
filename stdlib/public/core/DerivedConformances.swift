@@ -15,3 +15,7 @@
 @freestanding(declaration, names: named(__derived_equals))
 public macro _deriveEquatable(_ info: String) =
   #externalMacro(module: "SwiftMacros", type: "DeriveEquatableMacro")
+
+@attached(body)
+public macro _deriveEquatableBody(_ info: String) =
+  #externalMacro(module: "SwiftMacros", type: "DeriveEquatableBodyMacro")
