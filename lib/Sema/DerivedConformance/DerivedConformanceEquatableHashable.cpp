@@ -212,7 +212,7 @@ deriveBodyEquatable_enum_hasAssociatedValues_eq(AbstractFunctionDecl *eqDecl,
       auto rhsVar = rhsPayloadVars[varIdx];
       auto rhsExpr = new (C) DeclRefExpr(rhsVar, DeclNameLoc(),
                                          /*Implicit*/true);
-      auto guardStmt = DerivedConformance::returnFalseIfNotEqualGuard(C, 
+      auto guardStmt = DerivedConformance::returnFalseIfNotEqualGuard(C,
           lhsExpr, rhsExpr);
       statementsInCase.emplace_back(guardStmt);
     }
@@ -433,27 +433,45 @@ bool DerivedConformance::canDeriveEquatable(DeclContext *DC,
   return canDeriveConformance(DC, type, equatableProto);
 }
 
+static ValueDecl *deriveEquatableViaMacro(DerivedConformance &derived, ValueDecl *requirement) {
+  std::string macro = "#_deriveEquatable(";
+  macro += getNominalTypeInfoStringAsStringLit(derived);
+  macro += ")";
+  return deriveRequirementViaMacro(derived, requirement, macro);
+}
+
 ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   if (checkAndDiagnoseDisallowedContext(requirement))
     return nullptr;
 
-  // Build the necessary decl.
-  if (requirement->getBaseName() == "==") {
-    if (auto ed = dyn_cast<EnumDecl>(Nominal)) {
-      auto bodySynthesizer =
-          !ed->hasCases()
-              ? &deriveBodyEquatable_enum_uninhabited_eq
-              : ed->hasOnlyCasesWithoutAssociatedValues()
-                    ? &deriveBodyEquatable_enum_noAssociatedValues_eq
-                    : &deriveBodyEquatable_enum_hasAssociatedValues_eq;
-      return deriveEquatable_eq(*this, bodySynthesizer);
-    } else if (isa<StructDecl>(Nominal))
-      return deriveEquatable_eq(*this, &deriveBodyEquatable_struct_eq);
-    else
-      llvm_unreachable("todo");
+  if (requirement->getBaseName() != "==") {
+    requirement->diagnose(diag::broken_equatable_requirement);
+    return nullptr;
   }
-  requirement->diagnose(diag::broken_equatable_requirement);
-  return nullptr;
+
+  // Build the necessary decl.
+  auto &C = requirement->getASTContext();
+
+  // Via macro, if available
+  if (isMacroDerivationEnabled(C))
+    return deriveEquatableViaMacro(*this, requirement);
+
+  // Hand-crafting the AST otherwise
+  if (auto ed = dyn_cast<EnumDecl>(Nominal)) {
+    auto bodySynthesizer =
+        !ed->hasCases()
+            ? &deriveBodyEquatable_enum_uninhabited_eq
+            : ed->hasOnlyCasesWithoutAssociatedValues()
+                  ? &deriveBodyEquatable_enum_noAssociatedValues_eq
+                  : &deriveBodyEquatable_enum_hasAssociatedValues_eq;
+    return deriveEquatable_eq(*this, bodySynthesizer);
+  }
+
+  if (isa<StructDecl>(Nominal))
+    return deriveEquatable_eq(*this, &deriveBodyEquatable_struct_eq);
+
+  llvm_unreachable("todo");
+
 }
 
 void DerivedConformance::tryDiagnoseFailedEquatableDerivation(
@@ -481,7 +499,7 @@ static CallExpr *createHasherCombineCall(ASTContext &C,
   // hasher.combine(_:)
   auto *combineCall = UnresolvedDotExpr::createImplicit(
       C, hasherExpr, C.Id_combine, {Identifier()});
-  
+
   // hasher.combine(hashable)
   auto *argList = ArgumentList::forImplicitUnlabeled(C, {hashable});
   return CallExpr::createImplicit(C, combineCall, argList);
@@ -944,7 +962,7 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
     if (hashValueDecl->isImplicit()) {
       // Neither hashValue nor hash(into:) is explicitly defined; we need to do
       // a full Hashable derivation.
-      
+
       // Refuse to synthesize Hashable if type isn't a struct or enum, or if it
       // has non-Hashable stored properties/associated values.
       auto hashableProto = Context.getProtocol(KnownProtocolKind::Hashable);
@@ -981,7 +999,7 @@ ValueDecl *DerivedConformance::deriveHashable(ValueDecl *requirement) {
                                        &deriveBodyHashable_struct_hashInto);
       else // This should've been caught by canDeriveHashable above.
         llvm_unreachable("Attempt to derive Hashable for a type other "
-                         "than a struct or enum");      
+                         "than a struct or enum");
     } else {
       // hashValue has an explicit implementation, but hash(into:) doesn't.
       // Emit a deprecation warning, then derive hash(into:) in terms of
