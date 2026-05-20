@@ -27,9 +27,12 @@
 #include "swift/AST/ProtocolConformance.h"
 #include "swift/AST/SourceFile.h"
 #include "swift/AST/Stmt.h"
+#include "swift/AST/Type.h"
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
 #include "swift/ClangImporter/ClangModule.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/ErrorHandling.h"
 #include <string>
 
 using namespace swift;
@@ -1181,4 +1184,197 @@ SourceLoc swift::retrieveOriginalLocFromSynthesizedMacroExpansion(
   // The way it is currently setup, the start loc belongs to the parent and the
   // end to the original source range, so we return the end location
   return expansion->getSourceRange().End;
+}
+  
+/// Takes a `StringRef` and returns a new `std::string` containing its escaped
+/// representation.
+static std::string escapeString(StringRef str) {
+  std::string res;
+  for (const char c: str) {
+    switch (c) {
+      case '\a': res += "\\a"; break;
+      case '\b': res += "\\b"; break;
+      case '\e': res += "\\e"; break;
+      case '\f': res += "\\f"; break;
+      case '\n': res += "\\n"; break;
+      case '\r': res += "\\r"; break;
+      case '\t': res += "\\t"; break;
+      case '\v': res += "\\v"; break;
+      case '\?': res += "\\?"; break;
+      case '\\': res += "\\\\"; break;
+      case '\"': res += "\\\""; break;
+      case '\'': res += "\\\'"; break;
+      default: res += c; break;
+    }
+  }
+  return res;
+}
+
+
+/// Returns a Swift-parsable string representing the `LiteralExpr` lit.
+static std::string getLiteralExprAsString(const LiteralExpr *lit) {
+  if (isa<NilLiteralExpr>(lit)) {
+    return "nil";
+  }
+
+  if (auto num = dyn_cast<NumberLiteralExpr>(lit)) {
+    if (num->isNegative()) {
+      std::string res = "-";
+      res += num->getDigitsText();
+      return res;
+    }
+    return num->getDigitsText().str();
+  }
+
+  if (auto strlit = dyn_cast<StringLiteralExpr>(lit)) {
+    // Escape twice because we are getting the unescaped version and we want to
+    // write it as a string literal inside a string literal.
+    std::string res = "\\\"";
+    res += escapeString(escapeString(strlit->getValue()));
+    res += "\\\"";
+    return res;
+  }
+
+  if (auto flt = dyn_cast<FloatLiteralExpr>(lit)) {
+    llvm::SmallVector<char, 6> str;
+    flt->getValue().toString(str);
+    return std::string(str.data(), str.size());
+  }
+
+  if (auto boolean = dyn_cast<BooleanLiteralExpr>(lit)) {
+    if (boolean->getValue())
+      return "true";
+    return "false";
+  }
+
+  llvm_unreachable("Unsupported literal expr");
+}
+
+/// Returns a string representation of an `EnumElementDecl` with various
+/// interesting information
+static std::string getCaseInfoString(const EnumElementDecl *decl) {
+  std::string sb = "CaseInfo(name: \"";
+  sb += decl->getNameStr();
+  sb += "\", associatedValues: [";
+  if (decl->hasAssociatedValues()) {
+    auto payloadType = decl->getPayloadInterfaceType();
+    auto *tupleType = payloadType->getAs<TupleType>();
+    for (auto tupleElement : tupleType->getElements()) {
+      if (tupleElement.hasName()) {
+        sb += "\"";
+        sb += tupleElement.getName().str();
+        sb += "\", ";
+      } else {
+        sb += "nil, ";
+      }
+    }
+  }
+  sb += "],  rawValueExpr: ";
+  if (const auto *expr = decl->getRawValueExpr()) {
+    sb += "\"";
+    sb += getLiteralExprAsString(expr);
+    sb += "\"";
+  } else {
+    sb += "nil";
+  }
+  // TODO: actually compute availability
+  sb += ", availability: nil";
+  sb += ")";
+  return sb;
+}
+
+
+/// Returns a Swift-parsable string representing an `EnumDecl` with relevant
+/// information, such as the raw type of the enum, its cases, ...
+static std::string getEnumTypeKindString(const EnumDecl *ty) {
+  std::string sb = "enumLike(EnumTypeInfo(rawType: ";
+  if (const auto raw = ty->getRawType()) {
+    if (ty->getASTContext().getStringType()->isEqual(raw)) {
+      sb += "str";
+    } else {
+      sb += "\"";
+      sb += raw->getString();
+      sb += "\"";
+    }
+  } else {
+    sb += "nil";
+  }
+  sb += ", isObjC: ";
+  sb += ty->isObjC() ? "true" : "false";
+  sb += ", cases: [";
+  bool first = true;
+  for (const auto elem: ty->getAllElements()) {
+    if (!first) sb += ", ";
+    first = false;
+    sb += getCaseInfoString(elem);
+  }
+  sb += "]))";
+  return sb;
+}
+
+/// Returns a Swift-parsable string representing a property from a struct
+/// declaration.
+static std::string getStoredPropertyString(const VarDecl *property) {
+  std::string sb = "StoredProperty(name: \"";
+  sb += property->getNameStr();
+  sb += "\", typeName: \"";
+  sb += property->getTypeInContext().getString();
+  sb += "\", isVar: ";
+  sb +=
+      property->getIntroducer() == VarDecl::Introducer::Var ? "true" : "false";
+  sb += ", isStatic: ";
+  sb += property->isStatic() ? "true" : "false";
+  sb += ")";
+  return sb;
+}
+
+/// Returns a Swift-parsable string representing a `StructDecl` with
+/// information on its stored properties.
+static std::string getStructTypeKindString(const StructDecl *ty)  {
+  std::string sb = "structLike(StructTypeInfo(properties: [";
+  bool first = true;
+  for (const auto *property: ty->getStoredProperties()) {
+    if (!first) sb += ", ";
+    first = false;
+    sb += getStoredPropertyString(property);
+  }
+  sb += "]))";
+  return sb;
+}
+
+///  Returns a Swift-parsable string representing a `NominalTypeDecl` with
+/// relevant information. For the moment, only struct and enum types are
+/// supported.
+static std::string getNominalTypeKindString(NominalTypeDecl *ty) {
+  if (auto enumDecl = dyn_cast<EnumDecl>(ty))
+    return getEnumTypeKindString(enumDecl);
+
+  if (auto structDecl = dyn_cast<StructDecl>(ty))
+    return getStructTypeKindString(structDecl);
+
+  llvm_unreachable("todo");
+}
+
+std::string swift::getNominalTypeInfoString(DerivedConformance &derived) {
+  bool isUnsafe =
+      derived.Conformance->getExplicitSafety() == ExplicitSafety::Unsafe;
+
+  std::string sb = "NominalTypeInfo(name: \"";
+  sb += derived.Nominal->getNameStr();
+  sb += "\", kind: ";
+  sb += getNominalTypeKindString(derived.Nominal);
+  sb += ", isUnsafe: ";
+  sb += isUnsafe ? "true" : "false";
+  sb += ")";
+
+  return sb;
+}
+
+std::string
+swift::getNominalTypeInfoStringAsStringLit(DerivedConformance &derived) {
+  // This should be a valid string literal in Swift.
+  std::string sb = "\"";
+  sb += escapeString(getNominalTypeInfoString(derived));
+  sb += "\"";
+  return sb;
 }

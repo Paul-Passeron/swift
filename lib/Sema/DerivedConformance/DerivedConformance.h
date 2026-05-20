@@ -323,7 +323,7 @@ public:
   /// Derive a Decodable requirement for a struct type.
   ///
   /// \returns the derived member, which will also be added to the type.
-  ValueDecl *deriveDecodable(ValueDecl *requirement);  
+  ValueDecl *deriveDecodable(ValueDecl *requirement);
 
   /// Whether we can derive the given DistributedActor requirement in the given context.
   static bool canDeriveDistributedActor(NominalTypeDecl *nominal,
@@ -479,6 +479,13 @@ ValueDecl *deriveRequirementViaMacro(DerivedConformance &derived,
 
 /// Returns a source location in the synthesized source buffer created for `expansion`.
 SourceLoc retrieveOriginalLocFromSynthesizedMacroExpansion(FreestandingMacroExpansion *expansion);
+/// Get a string representing the nominal type we are deriving a conformance
+/// for. This is supposed to produce valid swift syntax.
+std::string getNominalTypeInfoString(DerivedConformance &derived);
+
+/// Get a string representing the nominal type info as
+/// `getNominalTypeInfoString` does but escaped and quoted
+std::string getNominalTypeInfoStringAsStringLit(DerivedConformance &derived);
 
 } // namespace swift
 
