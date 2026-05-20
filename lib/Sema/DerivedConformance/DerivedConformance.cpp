@@ -1001,7 +1001,8 @@ bool swift::memberwiseAccessorsRequireActorIsolation(NominalTypeDecl *nominal) {
   return false;
 }
 
-/// Takes a `StringRef` and returns a new `std::string` containing its escaped representation.
+/// Takes a `StringRef` and returns a new `std::string` containing its escaped
+/// representation.
 static std::string escapeString(StringRef str) {
   std::string res;
   for (const char c: str) {
@@ -1025,7 +1026,7 @@ static std::string escapeString(StringRef str) {
 }
 
 
-/// Returns a swift-parsable string representing the `LiteralExpr` lit.
+/// Returns a Swift-parsable string representing the `LiteralExpr` lit.
 static std::string getLiteralExprAsString(const LiteralExpr *lit) {
   if (isa<NilLiteralExpr>(lit)) {
     return "nil";
@@ -1064,7 +1065,8 @@ static std::string getLiteralExprAsString(const LiteralExpr *lit) {
   llvm_unreachable("Unsupported literal expr");
 }
 
-/// Returns a string representation of an `EnumElementDecl` with various interesting information
+/// Returns a string representation of an `EnumElementDecl` with various
+/// interesting information
 static std::string getCaseInfoString(const EnumElementDecl *decl) {
   std::string sb = "CaseInfo(name: \"";
   sb += decl->getNameStr();
@@ -1083,8 +1085,8 @@ static std::string getCaseInfoString(const EnumElementDecl *decl) {
 }
 
 
-/// Returns a swift-parsable string representing an `EnumDecl` with relevant information, such as the raw type of the
-/// the enum, its cases, ...
+/// Returns a Swift-parsable string representing an `EnumDecl` with relevant
+/// information, such as the raw type of the enum, its cases, ...
 static std::string getEnumTypeKindString(const EnumDecl *ty) {
   std::string sb = "enumLike(EnumTypeInfo(rawType: ";
   if (const auto raw = ty->getRawType()) {
@@ -1111,7 +1113,8 @@ static std::string getEnumTypeKindString(const EnumDecl *ty) {
   return sb;
 }
 
-/// Returns a swift-parsable string representing a property from a struct declaration.
+/// Returns a Swift-parsable string representing a property from a struct
+/// declaration.
 static std::string getStoredPropertyString(const VarDecl *property) {
   std::string sb = "StoredProperty(name: \"";
   sb += property->getNameStr();
@@ -1126,7 +1129,8 @@ static std::string getStoredPropertyString(const VarDecl *property) {
   return sb;
 }
 
-/// Returns a swift-parsable string representing a `StructDecl` with information on its stored properties.
+/// Returns a Swift-parsable string representing a `StructDecl` with
+/// information on its stored properties.
 static std::string getStructTypeKindString(const StructDecl *ty)  {
   std::string sb = "structLike(StructTypeInfo(properties: [";
   bool first = true;
@@ -1139,8 +1143,9 @@ static std::string getStructTypeKindString(const StructDecl *ty)  {
   return sb;
 }
 
-///  Returns a swift-parsable string representing a `NominalTypeDecl` with relevant information. For the
-///  moment, only struct and enum types are supported.
+///  Returns a Swift-parsable string representing a `NominalTypeDecl` with
+/// relevant information. For the moment, only struct and enum types are
+/// supported.
 static std::string getNominalTypeKindString(NominalTypeDecl *ty) {
   if (auto enumDecl = dyn_cast<EnumDecl>(ty))
     return getEnumTypeKindString(enumDecl);
