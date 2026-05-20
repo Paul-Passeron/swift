@@ -902,6 +902,18 @@ static CharSourceRange getPreambleMacroOriginalRange(AbstractFunctionDecl *fn) {
   return CharSourceRange(insertionLoc, 0);
 }
 
+
+static CharSourceRange makeRangeOrPoint(SourceManager &sm, SourceLoc start,
+                                        SourceLoc end) {
+  if (!start.isValid())
+    return CharSourceRange();
+  if (end.isValid() &&
+      sm.findBufferContainingLoc(start) == sm.findBufferContainingLoc(end)) {
+    return CharSourceRange(sm, start, end);
+  }
+  return CharSourceRange(start, /*length=*/0);
+}
+
 static CharSourceRange getExpansionInsertionRange(MacroRole role,
                                                   ASTNode target,
                                                   SourceManager &sourceMgr) {
@@ -1014,8 +1026,8 @@ static CharSourceRange getExpansionInsertionRange(MacroRole role,
   case MacroRole::Expression:
   case MacroRole::Declaration:
   case MacroRole::CodeItem:
-    return Lexer::getCharSourceRangeFromSourceRange(sourceMgr,
-                                                    target.getSourceRange());
+    return makeRangeOrPoint(sourceMgr, target.getSourceRange().Start,
+                            target.getSourceRange().End);
   }
   llvm_unreachable("unhandled MacroRole");
 }
