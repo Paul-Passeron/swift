@@ -1070,7 +1070,21 @@ static std::string getLiteralExprAsString(const LiteralExpr *lit) {
 static std::string getCaseInfoString(const EnumElementDecl *decl) {
   std::string sb = "CaseInfo(name: \"";
   sb += decl->getNameStr();
-  sb += "\", rawValueExpr: ";
+  sb += "\", associatedValues: [";
+  if (decl->hasAssociatedValues()) {
+    auto payloadType = decl->getPayloadInterfaceType();
+    auto *tupleType = payloadType->getAs<TupleType>();
+    for (auto tupleElement : tupleType->getElements()) {
+      if (tupleElement.hasName()) {
+        sb += "\"";
+        sb += tupleElement.getName().str();
+        sb += "\", ";
+      } else {
+        sb += "nil, ";
+      }
+    }
+  }
+  sb += "],  rawValueExpr: ";
   if (const auto *expr = decl->getRawValueExpr()) {
     sb += "\"";
     sb += getLiteralExprAsString(expr);
