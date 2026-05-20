@@ -28,7 +28,6 @@
 #include "swift/ClangImporter/ClangModule.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/YAMLParser.h"
 #include <string>
 
 using namespace swift;
@@ -1004,7 +1003,25 @@ bool swift::memberwiseAccessorsRequireActorIsolation(NominalTypeDecl *nominal) {
 
 /// Takes a `StringRef` and returns a new `std::string` containing its escaped representation.
 static std::string escapeString(StringRef str) {
-  return llvm::yaml::escape(str);
+  std::string res;
+  for (const char c: str) {
+    switch (c) {
+      case '\a': res += "\\a"; break;
+      case '\b': res += "\\b"; break;
+      case '\e': res += "\\e"; break;
+      case '\f': res += "\\f"; break;
+      case '\n': res += "\\n"; break;
+      case '\r': res += "\\r"; break;
+      case '\t': res += "\\t"; break;
+      case '\v': res += "\\v"; break;
+      case '\?': res += "\\?"; break;
+      case '\\': res += "\\\\"; break;
+      case '\"': res += "\\\""; break;
+      case '\'': res += "\\\'"; break;
+      default: res += c; break;
+    }
+  }
+  return res;
 }
 
 
