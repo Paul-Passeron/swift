@@ -357,7 +357,7 @@ static MacroInfo getMacroInfo(const GeneratedSourceInfo &Info,
       Result.Freestanding = true;
     break;
   }
-  case GeneratedSourceInfo::DeclarationMacroExpansion: 
+  case GeneratedSourceInfo::DeclarationMacroExpansion:
   case GeneratedSourceInfo::CodeItemMacroExpansion: {
     auto expansion = cast<MacroExpansionDecl>(
         cast<Decl *>(ASTNode::getFromOpaqueValue(Info.astNode)));
@@ -388,6 +388,7 @@ static MacroInfo getMacroInfo(const GeneratedSourceInfo &Info,
   case GeneratedSourceInfo::ReplacedFunctionBody:
   case GeneratedSourceInfo::DefaultArgument:
   case GeneratedSourceInfo::AttributeFromClang:
+  case GeneratedSourceInfo::SyntheticMacroDeclaration:
     break;
   }
   return Result;
@@ -408,7 +409,7 @@ const SILDebugScope *SILGenFunction::getMacroScope(SourceLoc SLoc) {
   auto Macro = getMacroInfo(*GeneratedSourceInfo, FunctionDC);
   if (Macro.Freestanding)
     return nullptr;
-  
+
   const SILDebugScope *TopLevelScope;
   auto It = InlinedScopeMap.find(BufferID);
   if (It != InlinedScopeMap.end())
@@ -578,7 +579,7 @@ void SILGenFunction::emitCaptures(SILLocation loc,
   // For boxed captures, we need to mark the contained variables as having
   // escaped for DI diagnostics.
   SmallVector<SILValue, 2> escapesToMark;
-  
+
   // Partial applications take ownership of the context parameters, so we'll
   // need to pass ownership rather than merely guaranteeing parameters.
   bool canGuarantee;
@@ -1003,7 +1004,7 @@ void SILGenFunction::emitCaptures(SILLocation loc,
     }
     }
   }
-  
+
   // Mark box addresses as captured for DI purposes. The values must have
   // been fully initialized before we close over them.
   if (!escapesToMark.empty()) {
@@ -1017,7 +1018,7 @@ SILGenFunction::emitClosureValue(SILLocation loc, SILDeclRef constant,
                                  SubstitutionMap subs) {
   auto loweredCaptureInfo = SGM.Types.getLoweredLocalCaptures(constant);
   SGM.Types.setCaptureTypeExpansionContext(constant, SGM.M);
-  
+
   auto constantInfo = getConstantInfo(getTypeExpansionContext(), constant);
   SILValue functionRef = emitGlobalFunctionRef(loc, constant, constantInfo);
   SILType functionTy = functionRef->getType();
@@ -1241,7 +1242,7 @@ void SILGenFunction::emitArtificialTopLevel(Decl *mainDecl) {
     // we're getting away with it because the types are guaranteed to already
     // be imported.
     ASTContext &ctx = getASTContext();
-    
+
     ImportPath::Element UIKitName =
       {ctx.getIdentifier("UIKit"), SourceLoc()};
 
@@ -1788,7 +1789,7 @@ InitializationPtr SILGenFunction::getSingleValueStmtInit(Expr *E) {
   // SingleValueStmtExpr initialization.
   if (!SingleValueStmtInitStack.back().Exprs.contains(E))
     return nullptr;
-  
+
   auto resultAddr = SingleValueStmtInitStack.back().InitializationBuffer;
   return make_possibly_unique<KnownAddressInitialization>(resultAddr);
 }
@@ -1851,7 +1852,7 @@ SILValue SILGenFunction::emitWrapIntegerLiteral(SILLocation loc,
   if (auto intTy = ty.getAs<BuiltinIntegerType>()) {
     return B.createIntegerLiteral(loc, ty, value);
   }
-  
+
   // Or wrap a value in a struct, potentially multiple times to handle types
   // that wrap integer types like ObjCBool (which may be Bool or Int8).
   auto structDecl = ty.getStructOrBoundGenericStruct();
