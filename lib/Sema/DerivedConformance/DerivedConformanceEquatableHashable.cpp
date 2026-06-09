@@ -29,6 +29,7 @@
 #include "swift/Basic/Assertions.h"
 #include "swift/Basic/QuotedString.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -441,7 +442,19 @@ static ValueDecl *deriveEquatableViaMacro(DerivedConformance &derived,
   auto os = llvm::raw_string_ostream(code);
   os << "#_deriveEquatable(" << QuotedString(getNominalTypeInfoString(derived))
      << ", isResilient: "
-     << (parentDC->getParentModule()->isResilient() ? "true" : "false") << ")";
+     << (parentDC->getParentModule()->isResilient() ? "true" : "false") << ", reachability: ";
+  if (auto *ed = dyn_cast<EnumDecl>(derived.Nominal)) {
+    os << "[";
+    llvm::interleaveComma(ed->getAllElements(), os, [&](auto elt) {
+      bool markReachable = !elt->isUnreachableAtRuntime() ||
+      elt->getParentEnum()->isUnreachableAtRuntime();
+      os << (markReachable ? "true" : "false");
+    });
+    os << "]";
+  } else {
+    os << "nil";
+  }
+  os << ")";
   auto *witness = deriveRequirementViaMacro(derived, requirement, os.str());
   return witness;
 }

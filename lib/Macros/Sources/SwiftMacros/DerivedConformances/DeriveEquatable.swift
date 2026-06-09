@@ -18,17 +18,19 @@ public struct DeriveEquatableMacro: DeclarationMacro {
 
   var infos: NominalTypeInfo
   var isResilient: Bool
+  var reachability: [Bool]?
 
   public static func expansion(
     of node: some FreestandingMacroExpansionSyntax,
     in context: some MacroExpansionContext
   ) throws -> [DeclSyntax] {
-    let (typeInfo, isResilient) = try node.arguments.expect(
+    let (typeInfo, isResilient, reachability) = try node.arguments.expect(
       .typeInfoFromString(),
-      .boolArg("isResilient")
+      .boolArg("isResilient"),
+      .boolArg("reachability").toArr().toOpt()
     )
     return [
-      Self(infos: typeInfo, isResilient: isResilient).deriveEquatable()
+      Self(infos: typeInfo, isResilient: isResilient, reachability: reachability).deriveEquatable()
     ]
   }
 
@@ -67,7 +69,7 @@ public struct DeriveEquatableMacro: DeclarationMacro {
   func getBody() -> CodeBlockItemListSyntax {
     switch infos.kind {
     case .enumLike(let enumInfos):
-      Self.getEnumBody(enumInfos)
+      Self.getEnumBody(enumInfos, self.reachability!)
     case .structLike(let structInfos):
       Self.getStructBody(structInfos)
     }
@@ -89,25 +91,31 @@ public struct DeriveEquatableMacro: DeclarationMacro {
     return .init(guards + ["\nreturn true"])
   }
 
-  static func getEnumBody(_ enumInfos: EnumTypeInfo) -> CodeBlockItemListSyntax
+  static func getEnumBody(_ enumInfos: EnumTypeInfo, _ reachable: [Bool]) -> CodeBlockItemListSyntax
   {
     if enumInfos.isUninhabited() {
       return getUninhabitedBody()
     }
     if enumInfos.hasNoAssociatedValues() {
-      return getNoAssociatedValuesBody(enumInfos)
+      return getNoAssociatedValuesBody(enumInfos, reachable)
     }
-    return getHasAssociatedValuesBody(enumInfos)
+    return getHasAssociatedValuesBody(enumInfos, reachable)
   }
 
   static func getUninhabitedBody() -> CodeBlockItemListSyntax {
     """
-    switch (a, b) {}
+    """
+  }
+
+  static func getUnreachableStatement() -> CodeBlockItemSyntax {
+    """
+    fatalError("Unavailable code reached")
     """
   }
 
   static func getDiscriminant(
     _ enumInfos: EnumTypeInfo,
+    _ reachable: [Bool],
     scrutinee: String,
     discrName: String
   )
@@ -117,10 +125,17 @@ public struct DeriveEquatableMacro: DeclarationMacro {
     let cases: [String] = enumInfos.cases.enumerated().map {
       i,
       infos in
-      """
-      case .\(infos.name): 
-        \(discrName) = \(i)
-      """
+      if reachable[i] {
+        """
+        case .\(infos.name): 
+          \(discrName) = \(i)
+        """
+      } else {
+        """
+        case .\(infos.name):
+          \(getUnreachableStatement())
+        """
+      }
     }
 
     return
@@ -133,10 +148,11 @@ public struct DeriveEquatableMacro: DeclarationMacro {
   }
 
   static func getNoAssociatedValuesBody(
-    _ enumInfos: EnumTypeInfo
+    _ enumInfos: EnumTypeInfo,
+    _ reachable: [Bool]
   ) -> CodeBlockItemListSyntax {
-    var items = getDiscriminant(enumInfos, scrutinee: "a", discrName: "index_a")
-    items += getDiscriminant(enumInfos, scrutinee: "b", discrName: "index_b")
+    var items = getDiscriminant(enumInfos, reachable, scrutinee: "a", discrName: "index_a")
+    items += getDiscriminant(enumInfos, reachable, scrutinee: "b", discrName: "index_b")
     items += ["return index_a == index_b"]
     return items
   }
@@ -164,27 +180,33 @@ public struct DeriveEquatableMacro: DeclarationMacro {
   }
 
   static func getHasAssociatedValuesBody(
-    _ enumInfos: EnumTypeInfo
+    _ enumInfos: EnumTypeInfo,
+    _ reachable: [Bool]
   ) -> CodeBlockItemListSyntax {
 
     var cases: [SwitchCaseSyntax] = []
+    var idx = 0
     for elt in enumInfos.cases {
-      /// TODO: handle unavailable cases
       let lPat = getEnumElementPayloadPattern(elt, varPrefix: "l")
       let rPat = getEnumElementPayloadPattern(elt, varPrefix: "r")
 
       var stmtsInCase: [CodeBlockItemSyntax] = []
-      for i in 0..<elt.associatedValues.count {
-        stmtsInCase.append(
-          """
-          guard l\(raw: i) == r\(raw: i) else {
-            return false
-          }
-          """
-        )
+      if reachable[idx] {
+        for i in 0..<elt.associatedValues.count {
+          stmtsInCase.append(
+            """
+            guard l\(raw: i) == r\(raw: i) else {
+              return false
+            }
+            """
+          )
+        }
+
+        stmtsInCase.append("return true")
+      } else {
+        stmtsInCase.append(getUnreachableStatement())
       }
 
-      stmtsInCase.append("return true")
 
       let thisCase: SwitchCaseSyntax =
         """
@@ -192,6 +214,7 @@ public struct DeriveEquatableMacro: DeclarationMacro {
           \(CodeBlockItemListSyntax(stmtsInCase))
         """
       cases.append(thisCase)
+      idx += 1
     }
 
     if enumInfos.cases.count > 1 {
