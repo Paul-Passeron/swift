@@ -24,7 +24,9 @@ public struct DeriveEquatableMacro: DeclarationMacro {
     in context: some MacroExpansionContext
   ) throws -> [DeclSyntax] {
     let (typeInfo, isResilient) = try node.arguments.expect(
-      .typeInfoFromString(), .boolArg("isResilient"))
+      .typeInfoFromString(),
+      .boolArg("isResilient")
+    )
     return [
       Self(infos: typeInfo, isResilient: isResilient).deriveEquatable()
     ]
@@ -71,28 +73,87 @@ public struct DeriveEquatableMacro: DeclarationMacro {
     }
   }
 
-  static func getEnumBody(_ enumInfos: EnumTypeInfo) -> CodeBlockItemListSyntax {
-    fatalError("TODO !")
+  static func getStructBody(_ structInfos: StructTypeInfo)
+    -> CodeBlockItemListSyntax
+  {
+
+    let guards: [CodeBlockItemSyntax] = structInfos.properties.map {
+      property in
+      """
+      guard a.\(raw: property.name) == b.\(raw: property.name) else {
+        return false
+      }
+      """
+    }
+
+    return .init(guards + ["return true"])
   }
 
-  static func getStructBody(_ structInfos: StructTypeInfo) -> CodeBlockItemListSyntax {
+  static func getEnumBody(_ enumInfos: EnumTypeInfo) -> CodeBlockItemListSyntax
+  {
+    if enumInfos.isUninhabited() {
+      return getUninhabitedBody()
+    }
+    if enumInfos.hasNoAssociatedValues() {
+      return getNoAssociatedValuesBody(enumInfos)
+    }
+    return getHasAssociatedValuesBody(enumInfos)
+  }
 
-     let guards: [CodeBlockItemSyntax] = structInfos.properties.map {
-       property in 
-       """
-       guard a.\(raw: property.name) == b.\(raw: property.name) else {
-         return false
-       }
-       """ 
-     }
-    
-    return .init(guards + ["return true"])
+  static func getUninhabitedBody() -> CodeBlockItemListSyntax {
+    """
+    switch (a, b) {}
+    """
+  }
+
+  static func getDiscriminant(
+    _ enumInfos: EnumTypeInfo,
+    scrutinee: String,
+    discrName: String
+  )
+    -> CodeBlockItemListSyntax
+  {
+    /// TODO: handle unavailable cases
+    let cases: [String] = enumInfos.cases.enumerated().map {
+      i,
+      infos in
+      """
+      case .\(infos.name): 
+        \(discrName) = \(i)
+      """
+    }
+
+    return
+      """
+      var \(raw: discrName)
+      switch \(raw: scrutinee) {
+      \(raw: cases.joined(separator: "\n"))
+      }
+      """
+  }
+
+  static func getNoAssociatedValuesBody(
+    _ enumInfos: EnumTypeInfo
+  ) -> CodeBlockItemListSyntax {
+    var items = getDiscriminant(enumInfos, scrutinee: "a", discrName: "index_a")
+    items += getDiscriminant(enumInfos, scrutinee: "b", discrName: "index_b")
+    items += ["return index_a == index_b"]
+    return items
+  }
+
+  static func getHasAssociatedValuesBody(
+    _ enumInfos: EnumTypeInfo
+  ) -> CodeBlockItemListSyntax {
+    fatalError()
   }
 }
 
-
 extension EnumTypeInfo {
-  func hasAssociatedValues() -> Bool {
+  func hasNoAssociatedValues() -> Bool {
     cases.allSatisfy(\.associatedValues.isEmpty)
+  }
+
+  func isUninhabited() -> Bool {
+    cases.isEmpty
   }
 }
