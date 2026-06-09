@@ -141,10 +141,73 @@ public struct DeriveEquatableMacro: DeclarationMacro {
     return items
   }
 
+  static func getEnumElementPayloadPattern(
+    _ elt: CaseInfo,
+    varPrefix: String
+  ) -> PatternSyntax {
+    if elt.associatedValues.isEmpty {
+      return ".\(raw: elt.name)"
+    }
+
+    let vars: [String] = elt.associatedValues.enumerated().map {
+      i,
+      name in
+      let prefix =
+        if let name = name {
+          "\(name): "
+        } else { "" }
+      return "\(prefix)let \(varPrefix)\(i)"
+    }
+
+    return ".\(raw: elt.name)(\(raw: vars.joined(separator: ", ")))"
+
+  }
+
   static func getHasAssociatedValuesBody(
     _ enumInfos: EnumTypeInfo
   ) -> CodeBlockItemListSyntax {
-    fatalError()
+
+    var cases: [SwitchCaseSyntax] = []
+    for elt in enumInfos.cases {
+      /// TODO: handle unavailable cases
+      let lPat = getEnumElementPayloadPattern(elt, varPrefix: "l")
+      let rPat = getEnumElementPayloadPattern(elt, varPrefix: "r")
+
+      var stmtsInCase: [CodeBlockItemSyntax] = []
+      for i in 0..<elt.associatedValues.count {
+        stmtsInCase.append(
+          """
+          guard l\(raw: i) == r\(raw: i) else {
+            return false
+          }
+          """
+        )
+      }
+
+      stmtsInCase.append("return true")
+
+      let thisCase: SwitchCaseSyntax =
+        """
+        case (\(lPat), \(rPat)): 
+          \(CodeBlockItemListSyntax(stmtsInCase))
+        """
+      cases.append(thisCase)
+    }
+
+    if enumInfos.cases.count > 1 {
+      cases.append(
+        """
+        default: return false
+        """
+      )
+    }
+
+    return
+      """
+      switch (a, b) {
+      \(SwitchCaseListSyntax(cases.map { .switchCase($0) }))
+      }
+      """
   }
 }
 
