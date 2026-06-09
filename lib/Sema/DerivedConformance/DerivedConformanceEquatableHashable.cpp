@@ -438,22 +438,23 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
     return nullptr;
 
   // Build the necessary decl.
-  if (requirement->getBaseName() == "==") {
-    if (auto ed = dyn_cast<EnumDecl>(Nominal)) {
-      auto bodySynthesizer =
-          !ed->hasCases()
-              ? &deriveBodyEquatable_enum_uninhabited_eq
-              : ed->hasOnlyCasesWithoutAssociatedValues()
-                    ? &deriveBodyEquatable_enum_noAssociatedValues_eq
-                    : &deriveBodyEquatable_enum_hasAssociatedValues_eq;
-      return deriveEquatable_eq(*this, bodySynthesizer);
-    } else if (isa<StructDecl>(Nominal))
-      return deriveEquatable_eq(*this, &deriveBodyEquatable_struct_eq);
-    else
-      llvm_unreachable("todo");
+  if (requirement->getBaseName() != "==") {
+    ABORT("Broken requirement");
   }
-  requirement->diagnose(diag::broken_equatable_requirement);
-  return nullptr;
+
+  if (auto ed = dyn_cast<EnumDecl>(Nominal)) {
+    auto bodySynthesizer =
+        !ed->hasCases() ? &deriveBodyEquatable_enum_uninhabited_eq
+        : ed->hasOnlyCasesWithoutAssociatedValues()
+            ? &deriveBodyEquatable_enum_noAssociatedValues_eq
+            : &deriveBodyEquatable_enum_hasAssociatedValues_eq;
+    return deriveEquatable_eq(*this, bodySynthesizer);
+  }
+
+  if (isa<StructDecl>(Nominal))
+    return deriveEquatable_eq(*this, &deriveBodyEquatable_struct_eq);
+
+  ABORT("Equatable derivation only supports struct and enums.");
 }
 
 void DerivedConformance::tryDiagnoseFailedEquatableDerivation(
