@@ -159,6 +159,10 @@ struct ArgInfo<T> {
     .init(name: name, parser: parseBool)
   }
 
+  static func typeInfoFromString(_ name: String? = nil) -> ArgInfo<NominalTypeInfo> {
+      .init(name: name, parser: NominalTypeInfo.fromStringLit)
+  }
+
   /// Returns an argument with the `name` label of type `U?` where `U`
   /// expressions can be parsed using the `parser` function.
   static func optArg<U>(

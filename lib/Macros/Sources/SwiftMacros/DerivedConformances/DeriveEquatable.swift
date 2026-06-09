@@ -15,10 +15,84 @@ import SwiftSyntaxBuilder
 import SwiftSyntaxMacros
 
 public struct DeriveEquatableMacro: DeclarationMacro {
+
+  var infos: NominalTypeInfo
+  var isResilient: Bool
+
   public static func expansion(
     of node: some FreestandingMacroExpansionSyntax,
     in context: some MacroExpansionContext
   ) throws -> [DeclSyntax] {
-    fatalError()
+    let (typeInfo, isResilient) = try node.arguments.expect(
+      .typeInfoFromString(), .boolArg("isResilient"))
+    return [
+      Self(infos: typeInfo, isResilient: isResilient).deriveEquatable()
+    ]
+  }
+
+  func deriveEquatable() -> DeclSyntax {
+    return
+      """
+      \(getAttributes())
+      func \(getFunctionName())(_ a: Self, _ b: Self) -> Bool {
+        \(getBody())
+      }
+      """
+  }
+
+  func getAttributes() -> AttributeListSyntax {
+    if isResilient {
+      ""
+    } else {
+      """
+      @_implements(Equatable, ==(_:_:))
+      """
+    }
+  }
+
+  func getFunctionName() -> TokenSyntax {
+    if isResilient {
+      return "=="
+    }
+    switch infos.kind {
+    case .enumLike(_):
+      return "__derived_enum_equals"
+    case .structLike(_):
+      return "__derived_struct_equals"
+    }
+  }
+
+  func getBody() -> CodeBlockItemListSyntax {
+    switch infos.kind {
+    case .enumLike(let enumInfos):
+      Self.getEnumBody(enumInfos)
+    case .structLike(let structInfos):
+      Self.getStructBody(structInfos)
+    }
+  }
+
+  static func getEnumBody(_ enumInfos: EnumTypeInfo) -> CodeBlockItemListSyntax {
+    fatalError("TODO !")
+  }
+
+  static func getStructBody(_ structInfos: StructTypeInfo) -> CodeBlockItemListSyntax {
+
+     let guards: [CodeBlockItemSyntax] = structInfos.properties.map {
+       property in 
+       """
+       guard a.\(raw: property.name) == b.\(raw: property.name) else {
+         return false
+       }
+       """ 
+     }
+    
+    return .init(guards + ["return true"])
+  }
+}
+
+
+extension EnumTypeInfo {
+  func hasAssociatedValues() -> Bool {
+    cases.allSatisfy(\.associatedValues.isEmpty)
   }
 }
