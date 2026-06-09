@@ -1121,6 +1121,7 @@ ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &derived,
   }
   ASSERT(expansion);
 
+  derived.addMemberToConformanceContext(expansion, nullptr);
   // Find the expanded `ValueDecl *` and return it. There should only ever be a
   // single one.
   ValueDecl *witness = nullptr;
