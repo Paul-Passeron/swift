@@ -27,6 +27,7 @@
 #include "swift/AST/Stmt.h"
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
+#include "swift/Basic/QuotedString.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/raw_ostream.h"
@@ -433,6 +434,18 @@ bool DerivedConformance::canDeriveEquatable(DeclContext *DC,
   return canDeriveConformance(DC, type, equatableProto);
 }
 
+static ValueDecl *deriveEquatableViaMacro(DerivedConformance &derived,
+                                          ValueDecl *requirement) {
+  auto *parentDC = derived.getConformanceContext();
+  std::string code;
+  auto os = llvm::raw_string_ostream(code);
+  os << "#_deriveEquatable(" << QuotedString(getNominalTypeInfoString(derived))
+     << ", isResilient: "
+     << (parentDC->getParentModule()->isResilient() ? "true" : "false") << ")";
+  auto *witness = deriveRequirementViaMacro(derived, requirement, os.str());
+  return witness;
+}
+
 ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   if (checkAndDiagnoseDisallowedContext(requirement))
     return nullptr;
@@ -440,6 +453,10 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   // Build the necessary decl.
   if (requirement->getBaseName() != "==") {
     ABORT("Broken requirement");
+  }
+
+  if (requirement->getASTContext().LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+    return deriveEquatableViaMacro(*this, requirement);
   }
 
   if (auto ed = dyn_cast<EnumDecl>(Nominal)) {
