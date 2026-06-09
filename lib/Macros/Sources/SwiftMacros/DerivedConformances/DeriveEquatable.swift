@@ -86,7 +86,7 @@ public struct DeriveEquatableMacro: DeclarationMacro {
       """
     }
 
-    return .init(guards + ["return true"])
+    return .init(guards + ["\nreturn true"])
   }
 
   static func getEnumBody(_ enumInfos: EnumTypeInfo) -> CodeBlockItemListSyntax
@@ -125,7 +125,7 @@ public struct DeriveEquatableMacro: DeclarationMacro {
 
     return
       """
-      var \(raw: discrName)
+      var \(raw: discrName): Int
       switch \(raw: scrutinee) {
       \(raw: cases.joined(separator: "\n"))
       }
@@ -205,7 +205,7 @@ public struct DeriveEquatableMacro: DeclarationMacro {
     return
       """
       switch (a, b) {
-      \(SwitchCaseListSyntax(cases.map { .switchCase($0) }))
+      \(raw: cases.map { $0.trimmedDescription }.joined(separator: "\n"))
       }
       """
   }
