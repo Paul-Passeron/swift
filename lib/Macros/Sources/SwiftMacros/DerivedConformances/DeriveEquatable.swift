@@ -36,7 +36,7 @@ public struct DeriveEquatableMacro: DeclarationMacro {
     return
       """
       \(getAttributes())
-      func \(getFunctionName())(_ a: Self, _ b: Self) -> Bool {
+      static func \(getFunctionName())(_ a: Self, _ b: Self) -> Bool {
         \(getBody())
       }
       """
