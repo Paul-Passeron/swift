@@ -1,5 +1,7 @@
 // RUN: %target-swift-frontend -typecheck -verify -verify-ignore-unrelated -primary-file %s %S/Inputs/struct_equatable_hashable_other.swift -verify-ignore-unknown -swift-version 4
 
+// RUN: %target-swift-frontend -typecheck -verify -verify-ignore-unrelated -primary-file %s %S/Inputs/struct_equatable_hashable_other.swift -verify-ignore-unknown -swift-version 4 -enable-experimental-feature DeriveConformancesViaMacros -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib -dump-macro-expansions
+
 var hasher = Hasher()
 
 struct Point: Hashable {
