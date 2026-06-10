@@ -1061,11 +1061,6 @@ handleASTNodeForDerivation(ASTContext &C, DerivedConformance &derived,
   if (auto *fDecl = dyn_cast<AbstractFunctionDecl>(vDecl)) {
     if (addNonIsolated)
       addNonIsolatedToSynthesized(derived, fDecl);
-
-    // FIXME: This call is needed when building the stdlib, otherwise causing
-    // some linking errors on the witnesses. Will eventually get rid of it so
-    // that the body is synthesized only if needed.
-    (void)fDecl->getMacroExpandedBody();
   } else if (auto *varDecl = dyn_cast<VarDecl>(vDecl)) {
     // In all derivation cases for the moment, the getter of a
     // derived var decl should be immutable computed, so the default
@@ -1139,6 +1134,11 @@ ValueDecl *swift::deriveRequirementViaMacro(DerivedConformance &derived,
   });
   ASSERT(witness && "Expected a witness but got NULL");
 
+  AccessLevel access = derived.Nominal->getFormalAccess();
+  if (access == AccessLevel::Private)
+    access = AccessLevel::FilePrivate;
+  witness->overwriteAccess(access);
+  
   return witness;
 }
 
