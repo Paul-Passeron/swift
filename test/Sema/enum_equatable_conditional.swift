@@ -1,5 +1,7 @@
 // RUN: %target-typecheck-verify-swift -verify-ignore-unrelated -swift-version 4
 
+// RUN: %target-typecheck-verify-swift -verify-ignore-unrelated -swift-version 4 -enable-experimental-feature DeriveConformancesViaMacros -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib
+
 struct NotEquatable { }
 
 enum WithArrayOfNotEquatables : Equatable { // expected-error{{type 'WithArrayOfNotEquatables' does not conform to protocol 'Equatable'}} expected-note {{add stubs for conformance}}
@@ -22,4 +24,3 @@ case only([T])
 
 // Okay: T is Equatable here too
 extension WithArrayOfEquatables2: Equatable where T: Equatable { }
-
