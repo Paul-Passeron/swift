@@ -46,11 +46,20 @@ public struct DeriveEquatableMacro: DeclarationMacro {
 
   func getAttributes() -> AttributeListSyntax {
     if isResilient {
-      ""
+      return ""
     } else {
-      """
-      @_implements(Equatable, ==(_:_:))
-      """
+      let semantics: String
+      switch infos.kind {
+      case .enumLike(_):
+        semantics = "@_semantics(\"derived_enum_equals\")"
+      default:
+        semantics = ""
+      }
+      return
+        """
+        \(raw: semantics)
+        @_implements(Equatable, ==(_:_:))
+        """
     }
   }
 
