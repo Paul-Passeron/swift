@@ -168,7 +168,8 @@ public struct DeriveEquatableMacro: DeclarationMacro {
 
   static func getEnumElementPayloadPattern(
     _ elt: CaseInfo,
-    varPrefix: String
+    varPrefix: String,
+    _ reachable: Bool
   ) -> PatternSyntax {
     if elt.associatedValues.isEmpty {
       return ".\(raw: elt.name)"
@@ -181,7 +182,13 @@ public struct DeriveEquatableMacro: DeclarationMacro {
         if let name = name {
           "\(name): "
         } else { "" }
-      return "\(prefix)let \(varPrefix)\(i)"
+      let suffix =
+        if reachable {
+          "let \(varPrefix)\(i)"
+        } else {
+          "_"
+        }
+      return "\(prefix)\(suffix)"
     }
 
     return ".\(raw: elt.name)(\(raw: vars.joined(separator: ", ")))"
@@ -194,13 +201,11 @@ public struct DeriveEquatableMacro: DeclarationMacro {
   ) -> CodeBlockItemListSyntax {
 
     var cases: [SwitchCaseSyntax] = []
-    var idx = 0
-    for elt in enumInfos.cases {
-      let lPat = getEnumElementPayloadPattern(elt, varPrefix: "l")
-      let rPat = getEnumElementPayloadPattern(elt, varPrefix: "r")
-
+    for (idx, elt) in enumInfos.cases.enumerated() {
       var stmtsInCase: [CodeBlockItemSyntax] = []
+
       if reachable[idx] {
+
         for i in 0..<elt.associatedValues.count {
           stmtsInCase.append(
             """
@@ -215,7 +220,8 @@ public struct DeriveEquatableMacro: DeclarationMacro {
       } else {
         stmtsInCase.append(getUnreachableStatement())
       }
-
+      let lPat = getEnumElementPayloadPattern(elt, varPrefix: "l", reachable[idx])
+      let rPat = getEnumElementPayloadPattern(elt, varPrefix: "r", reachable[idx])
 
       let thisCase: SwitchCaseSyntax =
         """
@@ -223,7 +229,6 @@ public struct DeriveEquatableMacro: DeclarationMacro {
           \(CodeBlockItemListSyntax(stmtsInCase))
         """
       cases.append(thisCase)
-      idx += 1
     }
 
     if enumInfos.cases.count > 1 {

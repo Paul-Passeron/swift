@@ -1061,6 +1061,7 @@ handleASTNodeForDerivation(ASTContext &C, DerivedConformance &derived,
   if (auto *fDecl = dyn_cast<AbstractFunctionDecl>(vDecl)) {
     if (addNonIsolated)
       addNonIsolatedToSynthesized(derived, fDecl);
+    (void)fDecl->getTypecheckedBody();
   } else if (auto *varDecl = dyn_cast<VarDecl>(vDecl)) {
     // In all derivation cases for the moment, the getter of a
     // derived var decl should be immutable computed, so the default
