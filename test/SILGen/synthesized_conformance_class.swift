@@ -1,5 +1,7 @@
 // RUN: %target-swift-frontend -Xllvm -sil-print-types -emit-silgen -emit-sorted-sil %s -swift-version 4 | %FileCheck %s
 
+// RUN: %target-swift-frontend -Xllvm -sil-print-types -emit-silgen -emit-sorted-sil %s -swift-version 4 -enable-experimental-feature DeriveConformancesViaMacros -load-plugin-library  %swift-plugin-dir/libSwiftMacros.dylib | %FileCheck %s
+
 final class Final<T> {
     var x: T
     init(x: T) { self.x = x }
