@@ -1,6 +1,9 @@
 // RUN: %target-swift-emit-silgen -module-name main %s -verify | %FileCheck %s --check-prefix=FRAGILE
 // RUN: %target-swift-emit-silgen -module-name main %s -verify -enable-library-evolution | %FileCheck %s --check-prefix=RESILIENT
 
+// RUN: %target-swift-emit-silgen -module-name main %s -verify -enable-experimental-feature DeriveConformancesViaMacros -load-plugin-library  %swift-plugin-dir/libSwiftMacros.dylib | %FileCheck %s --check-prefix=FRAGILE
+// RUN: %target-swift-emit-silgen -module-name main %s -verify -enable-library-evolution -enable-experimental-feature DeriveConformancesViaMacros -load-plugin-library  %swift-plugin-dir/libSwiftMacros.dylib | %FileCheck %s --check-prefix=RESILIENT
+
 // https://github.com/apple/swift/issues/51889
 
 public enum MyState : String {
