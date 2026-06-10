@@ -73,8 +73,9 @@ AvailabilityScope::createForSourceFile(SourceFile *SF,
       auto charRange = Ctx.SourceMgr.getRangeForBuffer(SF->getBufferID());
       range = SourceRange(charRange.getStart(), charRange.getEnd());
       auto originalNode = SF->getNodeInEnclosingSourceFile();
+      auto originalLoc = originalNode.getStartLoc();
       parentContext = parentScope->findMostRefinedSubContext(
-          originalNode.getStartLoc(), Ctx);
+          originalLoc.isValid() ? originalLoc : range.Start, Ctx);
     }
     break;
   }
