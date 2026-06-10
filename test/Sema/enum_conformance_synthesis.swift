@@ -1,4 +1,5 @@
 // RUN: %target-swift-frontend -typecheck -verify -verify-ignore-unrelated -primary-file %s %S/Inputs/enum_conformance_synthesis_other.swift -verify-ignore-unknown -swift-version 4
+// RUN: %target-swift-frontend -typecheck -verify -verify-ignore-unrelated -primary-file %s %S/Inputs/enum_conformance_synthesis_other.swift -verify-ignore-unknown -swift-version 4 -enable-experimental-feature DeriveConformancesViaMacros -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib
 
 var hasher = Hasher()
 
