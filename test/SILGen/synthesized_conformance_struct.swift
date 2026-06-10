@@ -1,6 +1,9 @@
 // RUN: %target-swift-frontend -emit-silgen -emit-sorted-sil %s -swift-version 4 | %FileCheck -check-prefix CHECK -check-prefix CHECK-FRAGILE %s
 // RUN: %target-swift-frontend -emit-silgen -emit-sorted-sil %s -swift-version 4 -enable-library-evolution | %FileCheck -check-prefix CHECK -check-prefix CHECK-RESILIENT %s
 
+// RUN: %target-swift-frontend -emit-silgen -emit-sorted-sil %s -swift-version 4 -enable-experimental-feature DeriveConformancesViaMacros -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib | %FileCheck -check-prefix CHECK -check-prefix CHECK-FRAGILE %s
+// RUN: %target-swift-frontend -emit-silgen -emit-sorted-sil %s -swift-version 4 -enable-library-evolution -enable-experimental-feature DeriveConformancesViaMacros -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib | %FileCheck -check-prefix CHECK -check-prefix CHECK-RESILIENT %s
+
 struct Struct<T> {
     var x: T
 }
@@ -9,10 +12,10 @@ struct Struct<T> {
 // CHECK:   @_hasStorage var x: T { get set }
 // CHECK:   enum CodingKeys : CodingKey {
 // CHECK:     case x
-// CHECK:     init?(stringValue: String)
-// CHECK:     init?(intValue: Int)
-// CHECK-FRAGILE:   @_implements(Equatable, ==(_:_:)) static func __derived_enum_equals(_ a: Struct<T>.CodingKeys, _ b: Struct<T>.CodingKeys) -> Bool
-// CHECK-RESILIENT: static func == (a: Struct<T>.CodingKeys, b: Struct<T>.CodingKeys) -> Bool
+// CHECK-DAG:     init?(stringValue: String)
+// CHECK-DAG:     init?(intValue: Int)
+// CHECK-FRAGILE-DAG:   @_implements(Equatable, ==(_:_:)) static func __derived_enum_equals(_ a: Struct<T>.CodingKeys, _ b: Struct<T>.CodingKeys) -> Bool
+// CHECK-RESILIENT-DAG: static func == (a: Struct<T>.CodingKeys, b: Struct<T>.CodingKeys) -> Bool
 // CHECK:     func hash(into hasher: inout Hasher)
 // CHECK:     var hashValue: Int { get }
 // CHECK:     var intValue: Int? { get }
