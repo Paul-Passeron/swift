@@ -20,11 +20,13 @@
 #include "swift/AST/Expr.h"
 #include "swift/AST/ParameterList.h"
 #include "swift/AST/Pattern.h"
+#include "swift/AST/PluginLoader.h"
 #include "swift/AST/ProtocolConformance.h"
 #include "swift/AST/SourceFile.h"
 #include "swift/AST/Stmt.h"
 #include "swift/AST/Types.h"
 #include "swift/Basic/Assertions.h"
+#include "swift/Basic/Feature.h"
 #include "swift/Basic/QuotedString.h"
 #include "swift/ClangImporter/ClangModule.h"
 #include "llvm/ADT/STLExtras.h"
@@ -1219,4 +1221,20 @@ std::string swift::getNominalTypeInfoString(DerivedConformance &derived) {
   printNominalTypeKind(out, derived.Nominal);
   out << ", isUnsafe: " << (isUnsafe ? "true" : "false") << ")";
   return res;
+}
+
+bool swift::canDeriveConformancesViaMacros(ASTContext &C) {
+  if (!C.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros))
+    return false;
+  if (!hasSwiftMacrosPlugin(C)) {
+    // TODO: error ?
+    return false;
+  }
+  return true;
+}
+
+bool swift::hasSwiftMacrosPlugin(ASTContext &C) {
+  auto &loader = C.getPluginLoader();
+  auto &entry = loader.lookupPluginByModuleName(C.getIdentifier("SwiftMacros"));
+  return !entry.libraryPath.empty();
 }

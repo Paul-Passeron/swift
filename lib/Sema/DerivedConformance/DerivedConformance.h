@@ -474,6 +474,10 @@ ValueDecl *deriveRequirementViaMacro(DerivedConformance &derived,
 /// for by producing valid swift syntax.
 std::string getNominalTypeInfoString(DerivedConformance &derived);
 
+bool canDeriveConformancesViaMacros(ASTContext &C);
+
+bool hasSwiftMacrosPlugin(ASTContext &C);
+
 } // namespace swift
 
 #endif

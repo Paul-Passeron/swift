@@ -469,6 +469,9 @@ ValueDecl *DerivedConformance::deriveEquatable(ValueDecl *requirement) {
   }
 
   if (requirement->getASTContext().LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+    if (!hasSwiftMacrosPlugin(requirement->getASTContext())) {
+      ABORT("No SwiftMacros plugin found");
+    }
     return deriveEquatableViaMacro(*this, requirement);
   }
 
