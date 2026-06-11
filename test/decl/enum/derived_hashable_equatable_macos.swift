@@ -1,7 +1,13 @@
-// RUN: %target-swift-frontend -print-ast %s | %FileCheck %s
-// RUN: %target-swift-frontend -application-extension -print-ast %s | %FileCheck %s
-// RUN: %target-swift-frontend -target %target-cpu-apple-macosx51 -print-ast %s | %FileCheck %s
-// RUN: %target-swift-frontend -target %target-cpu-apple-macosx14 -print-ast %s | %FileCheck %s
+// RUN: %target-swift-frontend -print-ast %s | %FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-NO-MACROS
+// RUN: %target-swift-frontend -application-extension -print-ast %s | %FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-NO-MACROS
+// RUN: %target-swift-frontend -target %target-cpu-apple-macosx51 -print-ast %s | %FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-NO-MACROS
+// RUN: %target-swift-frontend -target %target-cpu-apple-macosx14 -print-ast %s | %FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-NO-MACROS
+
+// RUN: %target-swift-frontend -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib -enable-experimental-feature DeriveConformancesViaMacros -print-ast %s | %FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-MACROS
+// RUN: %target-swift-frontend -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib -enable-experimental-feature DeriveConformancesViaMacros -application-extension -print-ast %s | %FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-MACROS
+// RUN: %target-swift-frontend -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib -enable-experimental-feature DeriveConformancesViaMacros -target %target-cpu-apple-macosx51 -print-ast %s | %FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-MACROS
+// RUN: %target-swift-frontend -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib -enable-experimental-feature DeriveConformancesViaMacros -target %target-cpu-apple-macosx14 -print-ast %s | %FileCheck %s --check-prefix=CHECK --check-prefix=CHECK-MACROS
+
 // REQUIRES: OS=macosx
 
 // CHECK-LABEL: internal enum HasElementsWithAvailability : Hashable
@@ -29,15 +35,19 @@ enum HasElementsWithAvailability: Hashable {
   @available(macOSApplicationExtension, unavailable)
   case unavailableMacOSAppExtension
 
-  // CHECK:       @_implements(Equatable, ==(_:_:)) internal static func __derived_enum_equals(_ a: HasElementsWithAvailability, _ b: HasElementsWithAvailability) -> Bool {
+  // CHECK-NO-MACROS: @_implements(Equatable, ==(_:_:)) internal static func __derived_enum_equals(_ a: HasElementsWithAvailability, _ b: HasElementsWithAvailability) -> Bool {
+  // CHECK-MACROS:    @_implements(Equatable, ==(_:_:)) internal static func __derived_enum_equals(_ a: `Self`, _ b: `Self`) -> Bool {
   // CHECK-NEXT:    var index_a: Int
+  // CHECK-MACROS-EMPTY:
   // CHECK-NEXT:    switch a {
   // CHECK-NEXT:    case .alwaysAvailable:
   // CHECK-NEXT:      index_a = 0
   // CHECK-NEXT:    case .neverAvailable:
-  // CHECK-NEXT:      _diagnoseUnavailableCodeReached()
+  // CHECK-NO-MACROS-NEXT: _diagnoseUnavailableCodeReached()
+  // CHECK-MACROS-NEXT:    fatalError("Unavailable code reached")
   // CHECK-NEXT:    case .unavailableMacOS:
-  // CHECK-NEXT:      _diagnoseUnavailableCodeReached()
+  // CHECK-NO-MACROS-NEXT: _diagnoseUnavailableCodeReached()
+  // CHECK-MACROS-NEXT:    fatalError("Unavailable code reached")  
   // CHECK-NEXT:    case .obsoleted50:
   // CHECK-NEXT:      index_a = 1
   // CHECK-NEXT:    case .introduced50:
@@ -46,13 +56,16 @@ enum HasElementsWithAvailability: Hashable {
   // CHECK-NEXT:      index_a = 3
   // CHECK-NEXT:    }
   // CHECK-NEXT:    var index_b: Int
+  // CHECK-MACROS-EMPTY:
   // CHECK-NEXT:    switch b {
   // CHECK-NEXT:    case .alwaysAvailable:
   // CHECK-NEXT:      index_b = 0
   // CHECK-NEXT:    case .neverAvailable:
-  // CHECK-NEXT:      _diagnoseUnavailableCodeReached()
+  // CHECK-NO-MACROS-NEXT: _diagnoseUnavailableCodeReached()
+  // CHECK-MACROS-NEXT:    fatalError("Unavailable code reached")
   // CHECK-NEXT:    case .unavailableMacOS:
-  // CHECK-NEXT:      _diagnoseUnavailableCodeReached()
+  // CHECK-NO-MACROS-NEXT: _diagnoseUnavailableCodeReached()
+  // CHECK-MACROS-NEXT:    fatalError("Unavailable code reached")
   // CHECK-NEXT:    case .obsoleted50:
   // CHECK-NEXT:      index_b = 1
   // CHECK-NEXT:    case .introduced50:
