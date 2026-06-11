@@ -130,20 +130,23 @@ public struct DeriveEquatableMacro: DeclarationMacro {
   )
     -> CodeBlockItemListSyntax
   {
-    /// TODO: handle unavailable cases
+    var i = 0
     let cases: [String] = enumInfos.cases.enumerated().map {
-      i,
-      infos in
-      if reachable[i] {
-        """
-        case .\(infos.name): 
-          \(discrName) = \(i)
-        """
+      idx, infos in
+      if reachable[idx] {
+        let res =
+          """
+          case .\(infos.name): 
+            \(discrName) = \(i)
+          """
+        i += 1
+        return res
       } else {
-        """
-        case .\(infos.name):
-          \(getUnreachableStatement())
-        """
+        return
+          """
+          case .\(infos.name):
+            \(getUnreachableStatement())
+          """
       }
     }
 
