@@ -146,14 +146,14 @@ enum HasAssociatedValuesAndUnavailableElement: Hashable {
   @available(*, unavailable)
   case b(String)
 
-  // CHECK:       @_implements(Equatable, ==(_:_:)) internal static func __derived_enum_equals(_ a: HasAssociatedValuesAndUnavailableElement, _ b: HasAssociatedValuesAndUnavailableElement) -> Bool {
+  // CHECK:       @_implements(Equatable, ==(_:_:)) internal static func __derived_enum_equals(_ a: `Self`, _ b: `Self`) -> Bool {
   // CHECK-NEXT:    switch (a, b) {
   // CHECK-NEXT:    case (.a(let l0), .a(let r0)):
   // CHECK-NEXT:      guard l0 == r0 else {
   // CHECK-NEXT:        return false
   // CHECK-NEXT:      }
   // CHECK-NEXT:      return true
-  // CHECK-NEXT:    case (.b, .b):
+  // CHECK-NEXT:    case (.b(_), .b(_)):
   // CHECK-NEXT:      fatalError("Unavailable code reached")
   // CHECK-NEXT:    default:
   // CHECK-NEXT:      return false
@@ -186,17 +186,16 @@ enum UnavailableEnum: Hashable {
   // CHECK:        case b
   case b
 
-  // CHECK:        @_implements(Equatable, ==(_:_:)) internal static func __derived_enum_equals(_ a: UnavailableEnum, _ b: UnavailableEnum) -> Bool {
+  // CHECK:        @_implements(Equatable, ==(_:_:)) internal static func __derived_enum_equals(_ a: `Self`, _ b: `Self`) -> Bool {
   // CHECK-NEXT:     var index_a: Int
-  // CHECK-NO-MACROS-NEXT:     switch a {
-  // CHECK-MACROS:     switch a {
+  // CHECK:          switch a {
   // CHECK-NEXT:     case .a:
   // CHECK-NEXT:       index_a = 0
   // CHECK-NEXT:     case .b:
   // CHECK-NEXT:       index_a = 1
   // CHECK-NEXT:     }
   // CHECK-NEXT:     var index_b: Int
-  // CHECK-NEXT:     switch b {
+  // CHECK:          switch b {
   // CHECK-NEXT:     case .a:
   // CHECK-NEXT:       index_b = 0
   // CHECK-NEXT:     case .b:
