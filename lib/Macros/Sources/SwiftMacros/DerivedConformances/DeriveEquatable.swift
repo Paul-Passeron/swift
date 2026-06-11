@@ -171,7 +171,7 @@ public struct DeriveEquatableMacro: DeclarationMacro {
     varPrefix: String,
     _ reachable: Bool
   ) -> PatternSyntax {
-    if elt.associatedValues.isEmpty {
+    if elt.associatedValues.isEmpty || !reachable {
       return ".\(raw: elt.name)"
     }
 
@@ -182,13 +182,7 @@ public struct DeriveEquatableMacro: DeclarationMacro {
         if let name = name {
           "\(name): "
         } else { "" }
-      let suffix =
-        if reachable {
-          "let \(varPrefix)\(i)"
-        } else {
-          "_"
-        }
-      return "\(prefix)\(suffix)"
+      return "\(prefix)let \(varPrefix)\(i)"
     }
 
     return ".\(raw: elt.name)(\(raw: vars.joined(separator: ", ")))"
