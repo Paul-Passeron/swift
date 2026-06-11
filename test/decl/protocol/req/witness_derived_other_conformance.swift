@@ -1,4 +1,5 @@
 // RUN: %target-typecheck-verify-swift
+// RUN: %target-typecheck-verify-swift -load-plugin-library %swift-plugin-dir/libSwiftMacros.dylib -enable-experimental-feature DeriveConformancesViaMacros 
 
 protocol P {
   func hash(into: inout Hasher)
