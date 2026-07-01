@@ -32,7 +32,9 @@ enum NoValues {
 
 // CHECK-LABEL: extension NoValues : CaseIterable {
 // CHECK:   typealias AllCases = [NoValues]
-// CHECK:   static var allCases: [NoValues] { get }
+// CHECK:       static var allCases: [NoValues] { 
+// CHECK-NEXT:    get 
+// CHECK-NEXT:  }
 // CHECK: }
 
 
@@ -76,7 +78,7 @@ extension NoValues: Codable {}
 extension NoValues: CaseIterable {}
 // CHECK-LABEL: // static NoValues.allCases.getter
 // CHECK-NEXT: // Isolation: nonisolated
-// CHECK-NEXT: sil hidden [ossa] @$s35synthesized_conformance_enum_macros8NoValuesO8allCasesSayACGvgZ : $@convention(method) (@thin NoValues.Type) -> @owned Array<NoValues> {
+// CHECK-NEXT: sil hidden [transparent] [ossa] @$s35synthesized_conformance_enum_macros8NoValuesO8allCasesSayACGvgZ : $@convention(method) (@thin NoValues.Type) -> @owned Array<NoValues> {
 
 // Witness tables for Enum
 // CHECK-LABEL: sil_witness_table hidden <T where T : Decodable, T : Encodable> Enum<T>: Encodable module synthesized_conformance_enum_macros {
