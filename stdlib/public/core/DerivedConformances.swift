@@ -13,3 +13,7 @@
 @freestanding(declaration, names: arbitrary)
 public macro _deriveEquatable(_ infos: String, isResilient: Bool) =
   #externalMacro(module: "SwiftMacros", type: "DeriveEquatableMacro")
+
+@freestanding(declaration, names: arbitrary)
+public macro _deriveCaseIterable(_ infos: String, _ witness: String) =
+  #externalMacro(module: "SwiftMacros", type: "DeriveCaseIterableMacro")
