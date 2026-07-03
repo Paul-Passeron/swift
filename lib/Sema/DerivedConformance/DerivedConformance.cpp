@@ -1048,12 +1048,6 @@ handleASTNodeForDerivation(ASTContext &C, DerivedConformance &derived,
   if (!decl)
     return nullptr;
   
-  auto thisBuffer = C.SourceMgr.findBufferContainingLoc(decl->getStartLoc());
-  C.SourceMgr.getSourceFilesForBufferID(thisBuffer)[0]
-      ->getScope()
-      .buildFullyExpandedTree();
-  
-  // No particular set up needed and definitely not a witness, we can skip it.
   if (isa<PatternBindingDecl>(decl))
     return nullptr;
 
@@ -1061,17 +1055,10 @@ handleASTNodeForDerivation(ASTContext &C, DerivedConformance &derived,
   if (!vDecl)
     return nullptr;
 
-  decl->setImplicit();
-  
   // Handling function decls
   if (auto *fDecl = dyn_cast<AbstractFunctionDecl>(vDecl)) {
     if (addNonIsolated)
       addNonIsolatedToSynthesized(derived, fDecl);
-
-    // FIXME: This call is needed when building the stdlib, otherwise causing
-    // some linking errors on the witnesses. Will eventually get rid of it so
-    // that the body is synthesized only if needed.
-    (void)fDecl->getTypecheckedBody();
   } else if (auto *varDecl = dyn_cast<VarDecl>(vDecl)) {
     // In all derivation cases for the moment, the getter of a
     // derived var decl should be immutable computed, so the default
@@ -1080,13 +1067,6 @@ handleASTNodeForDerivation(ASTContext &C, DerivedConformance &derived,
       varDecl->setImplInfo(StorageImplInfo::getImmutableComputed());
     else 
       varDecl->getImplInfo();
-
-    // If it has a getter, then set it up properly
-    if (auto *getter = varDecl->getAccessor(AccessorKind::Get)) {
-      getter->setImplicit();
-      getter->setSynthesized();
-      getter->getTypecheckedBody();
-    }
   }
 
   return vDecl;
@@ -1245,4 +1225,19 @@ std::string swift::getNominalTypeInfoString(DerivedConformance &derived) {
   printNominalTypeKind(out, derived.Nominal);
   out << ", isUnsafe: " << (isUnsafe ? "true" : "false") << ")";
   return res;
+}
+
+bool swift::hasBeenMacroSynthesized(Decl *decl) {
+  auto loc = decl->getStartLoc();
+  if (loc.isInvalid())
+    return false;
+  auto &SM = decl->getASTContext().SourceMgr;
+  auto bufferID = SM.findBufferContainingLoc(loc);
+  auto SFS = SM.getSourceFilesForBufferID(bufferID);
+  if (SFS.empty())
+    return false;
+  auto *enclosing = SFS[0]->getEnclosingSourceFile();
+  if (!enclosing) 
+    return false;
+  return enclosing->Kind == SourceFileKind::SyntheticMacro;
 }
