@@ -115,9 +115,8 @@ ValueDecl *DerivedConformance::deriveCaseIterable(ValueDecl *requirement) {
     return nullptr;
   }
 
-  if (Context.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros)) {
+  if (Context.LangOpts.hasFeature(Feature::DeriveConformancesViaMacros))
     return deriveCaseIterableViaMacros(*this, requirement);
-  }
   
   // Define the property.
   auto *returnTy = computeAllCasesType(Nominal);
