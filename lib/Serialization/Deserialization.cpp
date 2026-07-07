@@ -354,17 +354,19 @@ ModularizationError::diagnose(const ModuleFile *MF,
   // decls moving between both modules.
   if (errorKind == Kind::DeclMoved ||
       errorKind == Kind::DeclKindChanged) {
-    StringRef foundModuleName = foundModule->getName().str();
-    StringRef expectedModuleName = expectedModule->getName().str();
-    if (foundModuleName != expectedModuleName &&
-        (foundModuleName.starts_with(expectedModuleName) ||
-         expectedModuleName.starts_with(foundModuleName)) &&
-        (expectedUnderlying ||
-         expectedModule->findUnderlyingClangModule())) {
-      std::string name = path.getFullName();
-      ctx.Diags.diagnose(loc,
-                         diag::modularization_issue_related_modules,
-                         declIsType, name);
+    if (foundModule) {
+      StringRef foundModuleName = foundModule->getName().str();
+      StringRef expectedModuleName = expectedModule->getName().str();
+      if (foundModuleName != expectedModuleName &&
+          (foundModuleName.starts_with(expectedModuleName) ||
+           expectedModuleName.starts_with(foundModuleName)) &&
+          (expectedUnderlying ||
+           expectedModule->findUnderlyingClangModule())) {
+        std::string name = path.getFullName();
+        ctx.Diags.diagnose(loc,
+                           diag::modularization_issue_related_modules,
+                           declIsType, name);
+      }
     }
   }
 
@@ -2227,7 +2229,7 @@ ModuleFile::resolveCrossReference(ModuleID MID, uint32_t pathLen) {
                                getIdentifier(privateDiscriminator));
     } else {
       baseModule->lookupQualified(baseModule, DeclNameRef(name),
-                                  SourceLoc(), NL_RemoveOverridden,
+                                  SourceLoc(), NLFlags::RemoveOverridden,
                                   values);
     }
     filterValues(filterTy, nullptr, nullptr, isType, inProtocolExt,
@@ -2437,7 +2439,7 @@ ModuleFile::resolveCrossReference(ModuleID MID, uint32_t pathLen) {
                                    getIdentifier(privateDiscriminator));
         } else {
           otherModule->lookupQualified(otherModule, DeclNameRef(name),
-                                       SourceLoc(), NL_RemoveOverridden,
+                                       SourceLoc(), NLFlags::RemoveOverridden,
                                        values);
         }
 
@@ -6580,6 +6582,24 @@ llvm::Error DeclDeserializer::deserializeDeclCommon() {
         break;
       }
 
+      case decls_block::COM_DECL_ATTR: {
+        bool implicit;
+        bool interface;
+        unsigned model;
+
+        serialization::decls_block::COMDeclAttrLayout::readRecord(
+            scratch, implicit, interface, model);
+
+        StringRef iid = interface ? blobData : "";
+        std::optional<StringRef> clsid =
+            !interface && !blobData.empty() ? std::optional<StringRef>(blobData)
+                                            : std::nullopt;
+        Attr = new (ctx) COMAttr(SourceLoc(), SourceRange(), iid, clsid,
+                                 model ? static_cast<COMThreadingModel>(model - 1)
+                                       : COMThreadingModel::Apartment, implicit);
+        break;
+      }
+
       case decls_block::Documentation_DECL_ATTR: {
         bool isImplicit;
         uint64_t CategoryID;
@@ -9265,16 +9285,6 @@ void ModuleFile::finishNormalConformance(NormalProtocolConformance *conformance,
       diagnoseAndConsumeError(thirdOrError.takeError());
     } else {
       fatal(thirdOrError.takeError());
-    }
-    if (isa_and_nonnull<TypeAliasDecl>(third) &&
-        third->getModuleContext() != getAssociatedModule() &&
-        !third->getDeclaredInterfaceType()->isEqual(second)) {
-      // Conservatively drop references to typealiases in other modules
-      // that may have changed. This may also drop references to typealiases
-      // that /haven't/ changed but just happen to have generics in them, but
-      // in practice having a declaration here isn't actually required by the
-      // rest of the compiler.
-      third = nullptr;
     }
     typeWitnesses[first] = {second, third};
   }

@@ -756,6 +756,8 @@ static bool parseDeclSILOptional(
       *isThunk = IsBackDeployedThunk;
     else if (isThunk && SP.P.Tok.getText() == "distributed_thunk")
       *isThunk = IsDistributedThunk;
+    else if (isThunk && SP.P.Tok.getText() == "distributed_proxy_adapter_thunk")
+      *isThunk = IsDistributedProxyAdapterThunk;
     else if (isWithoutActuallyEscapingThunk
              && SP.P.Tok.getText() == "without_actually_escaping")
       *isWithoutActuallyEscapingThunk = true;
@@ -1366,6 +1368,25 @@ static std::optional<AccessorKind> getAccessorKind(StringRef ident) {
       .Default(std::nullopt);
 }
 
+/// Consume an optional `(0x<addr>)` pointer payload.
+/// Only skips the payload if it looks exactly like a hex literal wrapped in parens,
+/// otherwise leaves produces a syntax error.
+static void consumeOptionalDeclPointerPayload(Parser &P) {
+  if (!P.Tok.is(tok::l_paren))
+    return;
+
+  Parser::CancellableBacktrackingScope backtrack(P);
+  P.consumeToken(tok::l_paren);
+  if (!P.Tok.is(tok::integer_literal) ||
+      !P.Tok.getText().starts_with("0x"))
+    return;
+  P.consumeToken(tok::integer_literal);
+  if (!P.Tok.is(tok::r_paren))
+    return;
+  P.consumeToken(tok::r_paren);
+  backtrack.cancelBacktrack();
+}
+
 ///  sil-decl-ref ::= '#' sil-identifier ('.' sil-identifier)* sil-decl-subref?
 ///  sil-decl-subref ::= '!' sil-decl-subref-part ('.' sil-decl-lang)?
 ///                      ('.' sil-decl-autodiff)?
@@ -1397,7 +1418,7 @@ bool SILParser::parseSILDeclRef(SILDeclRef &Result,
   if (!P.consumeIf(tok::sil_exclamation)) {
     // Construct SILDeclRef.
     Result = SILDeclRef(VD, Kind, IsObjC,
-                        /*distributed=*/false, /*knownToBeLocal=*/false,
+                        /*knownToBeLocal=*/false,
                         /*runtimeAccessible=*/false,
                         SILDeclRef::BackDeploymentKind::None, DerivativeId);
     return false;
@@ -1486,6 +1507,25 @@ bool SILParser::parseSILDeclRef(SILDeclRef &Result,
       } else if (Id.str() == "foreign") {
         IsObjC = true;
         break;
+      } else if (Id.str() == "distributed") {
+        // No need to store isDistributed=true; this is computed off the decl.
+        #ifndef NDEBUG
+        auto *afd = dyn_cast_or_null<AbstractFunctionDecl>(VD);
+        assert((!afd || afd->isDistributed()) &&
+               "Parsed SILDeclRef has '!distributed' but referred to decl is not distributed!");
+        #endif
+        consumeOptionalDeclPointerPayload(P); // ignore payload of legacy `!distributed(0x...)`
+        ParseState = 1;
+        break;
+      } else if (Id.str() == "distributed_thunk") {
+        Kind = SILDeclRef::Kind::DistributedThunk;
+        if (auto *afd = dyn_cast_or_null<AbstractFunctionDecl>(VD)) {
+          if (auto *thunk = afd->getDistributedThunk())
+            VD = thunk;
+        }
+        consumeOptionalDeclPointerPayload(P); // ignore payload of legacy `!distributed_thunk(0x...)`
+        ParseState = 1;
+        break;
       } else if (Id.str() == "jvp" || Id.str() == "vjp") {
         IndexSubset *parameterIndices = nullptr;
         GenericSignature derivativeGenSig;
@@ -1525,7 +1565,7 @@ bool SILParser::parseSILDeclRef(SILDeclRef &Result,
 
   // Construct SILDeclRef.
   Result = SILDeclRef(VD, Kind, IsObjC,
-                      /*distributed=*/false, /*knownToBeLocal=*/false,
+                      /*knownToBeLocal=*/false,
                       /*runtimeAccessible=*/false,
                       SILDeclRef::BackDeploymentKind::None, DerivativeId);
   return false;

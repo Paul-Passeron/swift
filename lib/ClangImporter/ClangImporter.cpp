@@ -73,7 +73,10 @@
 #include "clang/CAS/CASOptions.h"
 #include "clang/CAS/IncludeTree.h"
 #include "clang/CodeGen/ObjectFilePCHContainerWriter.h"
+#include "clang/DependencyScanning/ModuleDepCollector.h"
+#include "clang/DependencyScanning/ScanAndUpdateArgs.h"
 #include "clang/Driver/Compilation.h"
+#include "clang/Driver/CreateInvocationFromArgs.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/ToolChain.h"
 #include "clang/Frontend/CompilerInvocation.h"
@@ -93,8 +96,6 @@
 #include "clang/Serialization/ASTReader.h"
 #include "clang/Serialization/ASTWriter.h"
 #include "clang/Serialization/ObjectFilePCHContainerReader.h"
-#include "clang/Tooling/DependencyScanning/ModuleDepCollector.h"
-#include "clang/Tooling/DependencyScanning/ScanAndUpdateArgs.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -165,6 +166,7 @@ namespace {
 
   class PCHDeserializationCallbacks : public clang::ASTDeserializationListener {
     ClangImporter::Implementation &Impl;
+    clang::ASTReader *Reader = nullptr;
   public:
     explicit PCHDeserializationCallbacks(ClangImporter::Implementation &impl)
       : Impl(impl) {}
@@ -176,11 +178,25 @@ namespace {
     }
 
     void ReaderInitialized(clang::ASTReader *Reader) override {
+      // Stash the reader so DeclRead can map decls back to their owning module.
+      this->Reader = Reader;
+
       if (!Impl.IsReadingBridgingPCH)
         return;
 
       if (Impl.CASIDForPCH)
         Reader->getModuleManager().getPrimaryModule().CASID = *Impl.CASIDForPCH;
+    }
+
+    void DeclRead(clang::GlobalDeclID ID, const clang::Decl *D) override {
+      // Attribute each materialized (deserialized) decl to its owning serialized
+      // module, so we can report per-module in-RAM AST cost. Only tracked when
+      // memory-stat collection is enabled, to avoid per-decl overhead in normal
+      // builds.
+      if (!Impl.CollectMemoryStats || !Reader)
+        return;
+      if (auto *MF = Reader->getOwningModuleFile(ID))
+        ++Impl.MaterializedDeclsPerModule[MF];
     }
   };
 
@@ -1101,7 +1117,7 @@ bool ClangImporter::canReadPCH(StringRef PCHFilename) {
   clang::DiagnosticOptions diagOpts;
   clang::CompilerInstance CI(std::move(invocation),
                              Impl.Instance->getPCHContainerOperations(),
-                             &Impl.Instance->getModuleCache());
+                             Impl.Instance->getModuleCachePtr());
   CI.setTarget(&Impl.Instance->getTarget());
   CI.setDiagnostics(&*clang::CompilerInstance::createDiagnostics(
       Impl.Instance->getVirtualFileSystem(), diagOpts));
@@ -1189,7 +1205,7 @@ ClangImporter::getPCHFilename(const ClangImporterOptions &ImporterOptions,
   PCHBasename.append("-swift_");
   PCHBasename.append(SwiftPCHHash);
   PCHBasename.append("-clang_");
-  PCHBasename.append(getClangModuleHash());
+  PCHBasename.append(computeClangContextHash());
   PCHBasename.append(".pch");
   SmallString<256> PCHFilename { PCHOutputDir };
   llvm::sys::path::append(PCHFilename, PCHBasename);
@@ -1409,6 +1425,10 @@ std::unique_ptr<clang::CompilerInvocation> ClangImporter::createClangInvocation(
     CI = clang::createInvocation(invocationArgs, std::move(CIOpts));
     if (!CI)
       return nullptr;
+
+    // CodeGenOpts.Argv0 is a raw const char* into driverArgs[0]; re-anchor it
+    // to clangPath, which outlives the invocation.
+    CI->getCodeGenOpts().Argv0 = ctx.ClangImporterOpts.clangPath.c_str();
   }
 
   // FIXME: clang fails to generate a module if there is a `-fmodule-map-file`
@@ -2123,7 +2143,7 @@ std::string ClangImporter::getBridgingHeaderContents(
 
   clang::CompilerInstance rewriteInstance(
       std::move(invocation), Impl.Instance->getPCHContainerOperations(),
-      &Impl.Instance->getModuleCache());
+      Impl.Instance->getModuleCachePtr());
 
   if (Impl.CAS)
     rewriteInstance.setCASDatabases(Impl.CAS, Impl.ResultCache);
@@ -2231,7 +2251,7 @@ ClangImporter::cloneCompilerInstanceForPrecompiling() {
 
   auto clonedInstance = std::make_unique<clang::CompilerInstance>(
       std::move(invocation), Impl.Instance->getPCHContainerOperations(),
-      &Impl.Instance->getModuleCache());
+      Impl.Instance->getModuleCachePtr());
 
   if (Impl.CAS)
     clonedInstance->setCASDatabases(Impl.CAS, Impl.ResultCache);
@@ -2433,9 +2453,12 @@ bool ClangImporter::canImportModule(ImportPath::Module modulePath,
                                     SourceLoc loc,
                                     ModuleVersionInfo *versionInfo,
                                     bool isTestableDependencyLookup) {
-  // Look up the top-level module to see if it exists.
+  // Look up the top-level module to see if it exists, mapping any -module-alias
+  // to the real module name so canImport(<alias>) matches import <alias>.
   auto topModule = modulePath.front();
-  clang::Module *clangModule = Impl.lookupModule(topModule.Item.str());
+  auto realModuleName =
+      Impl.SwiftContext.getRealModuleName(topModule.Item).str();
+  clang::Module *clangModule = Impl.lookupModule(realModuleName);
   if (!clangModule) {
     return false;
   }
@@ -2461,7 +2484,7 @@ bool ClangImporter::canImportModule(ImportPath::Module modulePath,
       if (!clangModule && component.Item.str() == "Private" &&
           (&component) == (&modulePath.getRaw()[1])) {
         clangModule =
-            Impl.lookupModule((topModule.Item.str() + "_Private").str());
+            Impl.lookupModule((realModuleName + "_Private").str());
       }
       if (!clangModule || !clangModule->isAvailable(lo, ti, r, mh, m)) {
         return false;
@@ -2479,7 +2502,7 @@ bool ClangImporter::canImportModule(ImportPath::Module modulePath,
   // Look for the .tbd file inside .framework dir to get the project version
   // number.
   llvm::VersionTuple currentVersion = getCurrentVersionFromTBD(
-      Impl.Instance->getVirtualFileSystem(), path, topModule.Item.str());
+      Impl.Instance->getVirtualFileSystem(), path, realModuleName);
   versionInfo->setVersion(currentVersion,
                           ModuleVersionSourceKind::ClangModuleTBD);
   return true;
@@ -4497,8 +4520,8 @@ clang::CodeGenOptions &ClangImporter::getCodeGenOpts() const {
   return Impl.getCodeGenOptions();
 }
 
-std::string ClangImporter::getClangModuleHash() const {
-  return Impl.Invocation->getModuleHash(Impl.Instance->getDiagnostics());
+std::string ClangImporter::computeClangContextHash() const {
+  return Impl.Invocation->computeContextHash(Impl.Instance->getDiagnostics());
 }
 
 std::vector<std::string>
@@ -4556,7 +4579,7 @@ ClangImporter::getSwiftExplicitModuleDirectCC1Args() const {
   PPOpts.Includes.clear();
 
   // Clear benign CodeGenOptions.
-  clang::tooling::dependencies::resetBenignCodeGenOptions(
+  clang::dependencies::resetBenignCodeGenOptions(
       clang::frontend::ActionKind::GenerateModule, instance.getLangOpts(),
       instance.getCodeGenOpts());
 
@@ -4567,9 +4590,9 @@ ClangImporter::getSwiftExplicitModuleDirectCC1Args() const {
   if (!Impl.SwiftContext.SearchPathOpts.ScannerPrefixMapper.empty()) {
     // Remap all the paths if requested.
     llvm::PrefixMapper Mapper;
-    clang::tooling::dependencies::DepscanPrefixMapping::configurePrefixMapper(
+    clang::dependencies::DepscanPrefixMapping::configurePrefixMapper(
         Impl.SwiftContext.SearchPathOpts.ScannerPrefixMapper, Mapper);
-    clang::tooling::dependencies::DepscanPrefixMapping::remapInvocationPaths(
+    clang::dependencies::DepscanPrefixMapping::remapInvocationPaths(
         instance, Mapper);
     instance.getFrontendOpts().PathPrefixMappings.clear();
   }
@@ -4582,8 +4605,91 @@ ClangImporter::importDeclCached(const clang::NamedDecl *ClangDecl) {
   return Impl.importDeclCached(ClangDecl, Impl.CurrentVersion);
 }
 
+void ClangImporter::enableMemoryStatistics() {
+  Impl.CollectMemoryStats = true;
+}
+
+ClangImporter::ClangMemoryStats ClangImporter::getClangMemoryStats() const {
+  ClangMemoryStats stats;
+  // All imported modules share one ASTContext, so this is the aggregate
+  // deserialized-AST cost across every module (it cannot be split per module).
+  auto &clangCtx = Impl.getClangASTContext();
+  stats.astContextBytes =
+      clangCtx.getASTAllocatedMemory() + clangCtx.getSideTableAllocatedMemory();
+
+  auto *reader = Impl.Instance->getASTReader().get();
+  if (!reader)
+    return stats;
+
+  auto &moduleMgr = reader->getModuleManager();
+  stats.numLoadedModules = moduleMgr.size();
+  stats.perModule.reserve(stats.numLoadedModules);
+
+  for (clang::serialization::ModuleFile &MF : moduleMgr) {
+    ClangModuleMemoryInfo info;
+    info.moduleName = MF.ModuleName;
+    if (MF.Buffer) {
+      // In-memory size of the serialized (.pcm) bitstream buffer. The buffer
+      // may be malloc-backed (heap-allocated) or mmap-backed (file-backed and
+      // demand-paged). These are reported separately because their cost to the
+      // process differs and is hard to attribute uniformly (e.g. mmap pages may
+      // be shared or paged out, and CAS-backed storage differs again).
+      info.inMemoryBufferBytes = MF.Buffer->getBufferSize();
+      info.bufferIsMMapped =
+          MF.Buffer->getBufferKind() == llvm::MemoryBuffer::MemoryBuffer_MMap;
+      if (info.bufferIsMMapped)
+        stats.moduleBufferMMapBytes += info.inMemoryBufferBytes;
+      else
+        stats.moduleBufferMallocBytes += info.inMemoryBufferBytes;
+    }
+    info.onDiskDecls = MF.LocalNumDecls;
+    info.onDiskTypes = MF.LocalNumTypes;
+    info.onDiskIdentifiers = MF.LocalNumIdentifiers;
+    info.onDiskMacros = MF.LocalNumMacros;
+
+    auto it = Impl.MaterializedDeclsPerModule.find(&MF);
+    if (it != Impl.MaterializedDeclsPerModule.end()) {
+      info.materializedDecls = it->second;
+      stats.numMaterializedDecls += it->second;
+    }
+    stats.perModule.push_back(std::move(info));
+  }
+  return stats;
+}
+
 void ClangImporter::printStatistics() const {
   Impl.Instance->getASTReader()->PrintStats();
+
+  // Memory accounting summary + per-module breakdown.
+  auto stats = getClangMemoryStats();
+  uint64_t swiftBytes = Impl.SwiftContext.getTotalMemory();
+  auto &os = llvm::errs();
+  os << "\n*** Clang importer memory ***\n";
+  os << "Clang ASTContext bytes (shared, all modules): "
+     << stats.astContextBytes << "\n";
+  os << "Module buffer bytes (malloc):                 "
+     << stats.moduleBufferMallocBytes << "\n";
+  os << "Module buffer bytes (mmap):                   "
+     << stats.moduleBufferMMapBytes << "\n";
+  os << "Swift ASTContext bytes:                       " << swiftBytes << "\n";
+  os << "Loaded Clang modules: " << stats.numLoadedModules
+     << ", materialized decls: " << stats.numMaterializedDecls << "\n";
+
+  // Sort heaviest-first by materialized decls, then by buffer size.
+  llvm::stable_sort(stats.perModule,
+                    [](const ClangModuleMemoryInfo &a,
+                       const ClangModuleMemoryInfo &b) {
+                      if (a.materializedDecls != b.materializedDecls)
+                        return a.materializedDecls > b.materializedDecls;
+                      return a.inMemoryBufferBytes > b.inMemoryBufferBytes;
+                    });
+  os << "Per-module (sorted by materialized decls):\n";
+  os << "  materializedDecls / onDiskDecls  bufferBytes(kind)  module\n";
+  for (const auto &m : stats.perModule) {
+    os << "  " << m.materializedDecls << " / " << m.onDiskDecls << "  "
+       << m.inMemoryBufferBytes << (m.bufferIsMMapped ? "(mmap)" : "(malloc)")
+       << "  " << m.moduleName << "\n";
+  }
 }
 
 void ClangImporter::verifyAllModules() {
@@ -6684,9 +6790,9 @@ static void lookupRelatedFuncs(AbstractFunctionDecl *func,
     swiftName = func->getName();
 
   if (auto ty = func->getDeclContext()->getSelfNominalTypeDecl()) {
-    NLOptions options = NL_IgnoreAccessControl | NL_IgnoreMissingImports;
+    NLOptions options = {NLFlags::IgnoreAccessControl, NLFlags::IgnoreMissingImports};
     ty->lookupQualified({ ty }, DeclNameRef(swiftName), func->getLoc(),
-                        NL_QualifiedDefault | options, results);
+                        (NLFlags::QualifiedDefault) | options, results);
   }
   else {
     ASTContext &ctx = func->getASTContext();
@@ -7259,8 +7365,10 @@ std::string
 swift::getModuleCachePathFromClang(const clang::CompilerInstance &Clang) {
   if (!Clang.hasPreprocessor())
     return "";
-  std::string SpecificModuleCachePath =
-      Clang.getPreprocessor().getHeaderSearchInfo().getModuleCachePath().str();
+  std::string SpecificModuleCachePath = Clang.getPreprocessor()
+                                            .getHeaderSearchInfo()
+                                            .getSpecificModuleCachePath()
+                                            .str();
 
   // The returned-from-clang module cache path includes a suffix directory
   // that is specific to the clang version and invocation; we want the
@@ -8170,7 +8278,7 @@ importer::getValueDeclsForName(NominalTypeDecl *decl, StringRef name) {
         ctx.MainModule, ctx.getIdentifier(name), /*hasModuleSelector=*/false,
         results, NLKind::UnqualifiedLookup,
         namelookup::ResolutionKind::Overloadable, ctx.MainModule, SourceLoc(),
-        NL_UnqualifiedDefault);
+        NLFlags::UnqualifiedDefault);
 
     // Filter out any declarations that didn't come from Clang.
     auto newEnd =
@@ -8647,14 +8755,14 @@ bool IsSafeUseOfCxxDecl::evaluate(Evaluator &evaluator,
         isa<clang::CXXConstructorDecl>(decl))
       return true;
 
-    if (clangTypeIsForeignReference(method->getReturnType(), desc.ctx))
-      return true;
-
-    // begin and end methods likely return an interator, so they're unsafe. This
-    // is required so that automatic the conformance to RAC works properly.
+    // begin and end methods likely return an iterator, so they're unsafe.
+    // This is required so that automatic the conformance to RAC works properly.
     if (method->getNameAsString() == "begin" ||
         method->getNameAsString() == "end")
       return false;
+
+    if (clangTypeIsForeignReference(method->getReturnType(), desc.ctx))
+      return true;
 
     auto parentQualType = method
       ->getParent()->getTypeForDecl()->getCanonicalTypeUnqualified();
@@ -8744,6 +8852,73 @@ SourceLoc swift::extractNearestSourceLoc(ClangDeclExplicitSafetyDescriptor desc)
   return SourceLoc();
 }
 
+RetainReleaseOperationKind importer::checkRetainReleaseOperationValidity(
+    const ClassDecl *classDecl, ValueDecl *operation,
+    CustomRefCountingOperationKind operationKind) {
+  auto operationFn = dyn_cast<FuncDecl>(operation);
+  if (!operationFn)
+    return RetainReleaseOperationKind::notAfunction;
+
+  if (operationFn->isStatic())
+    return RetainReleaseOperationKind::notAnInstanceFunction;
+
+  if (operationFn->isInstanceMember()) {
+    if (operationFn->getParameters()->size() != 0)
+      return RetainReleaseOperationKind::invalidParameters;
+  } else {
+    if (operationFn->getParameters()->size() != 1)
+      return RetainReleaseOperationKind::invalidParameters;
+  }
+
+  Type paramType;
+  NominalTypeDecl *paramDecl = nullptr;
+  if (!operationFn->isInstanceMember()) {
+    paramType = operationFn->getParameters()
+                    ->get(0)
+                    ->getInterfaceType()
+                    ->lookThroughSingleOptionalType();
+
+    paramDecl = paramType->getAnyNominal();
+  } else {
+    paramDecl = cast<NominalTypeDecl>(operationFn->getParent());
+    paramType = paramDecl->getDeclaredInterfaceType();
+  }
+
+  // The return type should be void (for release functions), or void
+  // or the parameter type (for retain functions).
+  auto resultInterfaceType = operationFn->getResultInterfaceType();
+  if (!resultInterfaceType->isVoid() && !resultInterfaceType->isUInt() &&
+      !resultInterfaceType->isUInt8() && !resultInterfaceType->isUInt16() &&
+      !resultInterfaceType->isUInt32() && !resultInterfaceType->isUInt64() &&
+      !resultInterfaceType->isInt() && !resultInterfaceType->isInt8() &&
+      !resultInterfaceType->isInt16() && !resultInterfaceType->isInt32() &&
+      !resultInterfaceType->isInt64()) {
+    if (operationKind == CustomRefCountingOperationKind::release ||
+        !resultInterfaceType->lookThroughSingleOptionalType()->isEqual(
+            paramType))
+      return RetainReleaseOperationKind::invalidReturnType;
+  }
+
+  // The parameter of the retain/release function should be pointer to the
+  // same FRT or a base FRT.
+  if (paramDecl != classDecl) {
+    if (auto cxxDecl =
+            dyn_cast<clang::CXXRecordDecl>(classDecl->getClangDecl())) {
+      if (const clang::Decl *paramClangDecl = paramDecl->getClangDecl()) {
+        if (const auto *paramTypeDecl =
+                dyn_cast<clang::CXXRecordDecl>(paramClangDecl)) {
+          if (cxxDecl->isDerivedFrom(paramTypeDecl)) {
+            return RetainReleaseOperationKind::valid;
+          }
+        }
+      }
+    }
+    return RetainReleaseOperationKind::invalidParameters;
+  }
+
+  return RetainReleaseOperationKind::valid;
+}
+
 CustomRefCountingOperationResult CustomRefCountingOperation::evaluate(
     Evaluator &evaluator, CustomRefCountingOperationDescriptor desc) const {
   auto swiftDecl = desc.decl;
@@ -8779,11 +8954,25 @@ CustomRefCountingOperationResult CustomRefCountingOperation::evaluate(
     return {CustomRefCountingOperationResult::immortal, nullptr, name};
 
   auto results = getValueDeclsForName(const_cast<ClassDecl *>(swiftDecl), name);
-  if (results.size() == 1)
-    return {CustomRefCountingOperationResult::foundOperation, results.front(),
-            name};
 
-  if (results.empty())
+  TinyPtrVector<ValueDecl *> validResults;
+  if (results.size() > 1) {
+    // If we have ambiguous retain/release operations, try to disambiguate.
+    for (auto *candidate : results) {
+      if (importer::checkRetainReleaseOperationValidity(swiftDecl, candidate,
+                                                        operation) ==
+          RetainReleaseOperationKind::valid)
+        validResults.push_back(candidate);
+    }
+  } else if (results.size() == 1) {
+    validResults.push_back(results.front());
+  }
+
+  if (validResults.size() == 1)
+    return {CustomRefCountingOperationResult::foundOperation,
+            validResults.front(), name};
+
+  if (validResults.empty())
     return {CustomRefCountingOperationResult::notFound, nullptr, name};
 
   return {CustomRefCountingOperationResult::tooManyFound, nullptr, name};

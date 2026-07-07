@@ -529,11 +529,11 @@ Type SILGenModule::getConfiguredExecutorFactory() {
     mainType->lookupQualified(mainType,
                               DeclNameRef(identifier),
                               SourceLoc(),
-                              NL_RemoveNonVisible |
-                              NL_RemoveOverridden |
-                              NL_OnlyTypes |
-                              NL_RemoveAssociatedTypes |
-                              NL_ProtocolMembers,
+                              {NLFlags::RemoveNonVisible,
+                               NLFlags::RemoveOverridden,
+                               NLFlags::OnlyTypes,
+                               NLFlags::RemoveAssociatedTypes,
+                               NLFlags::ProtocolMembers},
                               decls);
     for (auto decl : decls) {
       auto *genericDecl = cast<GenericTypeDecl>(decl);
@@ -998,7 +998,8 @@ void SILGenModule::emitFunctionDefinition(SILDeclRef constant, SILFunction *f) {
   }
 
   switch (constant.kind) {
-  case SILDeclRef::Kind::Func: {
+  case SILDeclRef::Kind::Func:
+  case SILDeclRef::Kind::DistributedThunk: {
     if (auto *ce = constant.getAbstractClosureExpr()) {
       preEmitFunction(constant, f, ce);
       PrettyStackTraceSILFunction X("silgen closureexpr", f);
@@ -1549,6 +1550,12 @@ void SILGenModule::emitAbstractFuncDecl(AbstractFunctionDecl *AFD) {
   }
 
   emitDistributedThunkForDecl(AFD);
+
+  // If \p AFD has an `any P` / `some P` `@Resolvable protocol` parameter
+  // or result, also emit the recipient-side thunk that adapts between the
+  // wire-level proxy stub `$P` and the user-facing `any P` / `some P`
+  // for the call into \p AFD itself.
+  emitDistributedResolvableProxyAdapterThunkForDecl(AFD);
 
   if (AFD->isBackDeployed()) {
     // Emit the fallback function that will be used when the original function
@@ -2171,10 +2178,6 @@ static bool canStorageUseTrivialDescriptor(SILGenModule &SGM,
 }
 
 void SILGenModule::tryEmitPropertyDescriptor(AbstractStorageDecl *decl) {
-  // TODO: Key path code emission doesn't handle opaque values properly yet.
-  if (!SILModuleConventions(M).useLoweredAddresses())
-    return;
-  
   auto descriptorContext = decl->getPropertyDescriptorGenericSignature();
   if (!descriptorContext)
     return;

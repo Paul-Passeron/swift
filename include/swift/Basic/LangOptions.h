@@ -1065,17 +1065,13 @@ namespace swift {
     /// Enable generation of transitive conformance constraints.
     bool SolverEnableTransitiveConformance = true;
 
-    /// Enable experimental optimization to speed up binding of type variables.
-    bool SolverEnableBindingOptimizations = true;
-
     /// Enable experimental optimization to skip contradictory disjunction
     /// choices.
     bool SolverPruneDisjunctions = true;
 
-    /// Enable experimental optimization to skip operators defined in protocol
-    /// extensions if they are a refinement of a protocol requirement that also
-    /// appears in the disjunction.
-    bool SolverOptimizeOperatorDefaults = true;
+    /// Enable an inefficient form of inference, which will sometimes prevent
+    /// exact binding promotion from taking place.
+    bool SolverEnableEnumerateSupertypes = true;
   };
 
   /// Options for controlling the behavior of the Clang importer.

@@ -2132,11 +2132,6 @@ static bool ParseTypeCheckerArgs(TypeCheckerOptions &Opts, ArgList &Args,
                    OPT_solver_disable_transitive_conformance,
                    Opts.SolverEnableTransitiveConformance);
 
-  Opts.SolverEnableBindingOptimizations =
-      Args.hasFlag(OPT_solver_enable_binding_optimizations,
-                   OPT_solver_disable_binding_optimizations,
-                   Opts.SolverEnableBindingOptimizations);
-
   Opts.SolverEnablePreparedOverloads =
       Args.hasFlag(OPT_solver_enable_prepared_overloads,
                    OPT_solver_disable_prepared_overloads,
@@ -2147,15 +2142,15 @@ static bool ParseTypeCheckerArgs(TypeCheckerOptions &Opts, ArgList &Args,
                    OPT_solver_disable_prune_disjunctions,
                    Opts.SolverPruneDisjunctions);
 
-  Opts.SolverOptimizeOperatorDefaults =
-      Args.hasFlag(OPT_solver_enable_optimize_operator_defaults,
-                   OPT_solver_disable_optimize_operator_defaults,
-                   Opts.SolverOptimizeOperatorDefaults);
-
   Opts.SolverEnablePerformanceHacks =
       Args.hasFlag(OPT_solver_enable_performance_hacks,
                    OPT_solver_disable_performance_hacks,
                    Opts.SolverEnablePerformanceHacks);
+
+  Opts.SolverEnableEnumerateSupertypes =
+      Args.hasFlag(OPT_solver_enable_enumerate_supertypes,
+                   OPT_solver_disable_enumerate_supertypes,
+                   Opts.SolverEnableEnumerateSupertypes);
 
   if (FrontendOpts.RequestedAction == FrontendOptions::ActionType::Immediate)
     Opts.DeferToRuntime = true;
@@ -3330,6 +3325,8 @@ static bool ParseSILArgs(SILOptions &Opts, ArgList &Args,
   Opts.VerifyOwnershipAll |= Args.hasArg(OPT_sil_ownership_verify_all);
   Opts.AbortOnUnknownRegionIsolationPatternError |=
       Args.hasArg(OPT_sil_region_isolation_assert_on_unknown_pattern);
+  Opts.EmitIsolationHistory |=
+      Args.hasArg(OPT_sil_region_isolation_emit_isolation_history);
   Opts.DebugSerialization |= Args.hasArg(OPT_sil_debug_serialization);
   Opts.EmitVerboseSIL |= Args.hasArg(OPT_emit_verbose_sil);
   Opts.EmitSortedSIL |= Args.hasArg(OPT_emit_sorted_sil);

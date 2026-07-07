@@ -437,6 +437,13 @@ DeclAttributes Decl::getSemanticAttrs() const {
   return getAttrs();
 }
 
+void Decl::applyFileDefaults() {
+  if (!ApplyFileDefaultsRequest::appliesTo(this))
+    return;
+  (void)evaluateOrDefault(getASTContext().evaluator,
+                          ApplyFileDefaultsRequest{this}, {});
+}
+
 void Decl::attachParsedAttrs(DeclAttributes attrs) {
   ASSERT(getAttrs().isEmpty() && "attaching when there are already attrs?");
 
@@ -1865,28 +1872,15 @@ bool ImportDecl::isAccessLevelImplicit() const {
   return true;
 }
 
-UsingDecl::UsingDecl(SourceLoc usingLoc, SourceLoc specifierLoc,
-                     UsingSpecifier specifier, DeclContext *parent)
+UsingDecl::UsingDecl(SourceLoc usingLoc, DeclAttributes specifiedAttributes,
+                     DeclContext *parent)
     : Decl(DeclKind::Using, parent), UsingLoc(usingLoc),
-      SpecifierLoc(specifierLoc) {
-  Bits.UsingDecl.Specifier = static_cast<unsigned>(specifier);
-  assert(getSpecifier() == specifier &&
-         "not enough bits in UsingDecl flags for specifier");
-}
-
-std::string UsingDecl::getSpecifierName() const {
-  switch (getSpecifier()) {
-  case UsingSpecifier::MainActor:
-    return "@MainActor";
-  case UsingSpecifier::Nonisolated:
-    return "nonisolated";
-  }
-}
+      SpecifiedAttributes(specifiedAttributes) {}
 
 UsingDecl *UsingDecl::create(ASTContext &ctx, SourceLoc usingLoc,
-                             SourceLoc specifierLoc, UsingSpecifier specifier,
+                             DeclAttributes specifiedAttributes,
                              DeclContext *parent) {
-  return new (ctx) UsingDecl(usingLoc, specifierLoc, specifier, parent);
+  return new (ctx) UsingDecl(usingLoc, specifiedAttributes, parent);
 }
 
 void NominalTypeDecl::setConformanceLoader(LazyMemberLoader *lazyLoader,
@@ -5075,7 +5069,7 @@ abi_role_detail::Storage abi_role_detail::computeStorage(Decl *decl) {
 }
 
 ABIRole::ABIRole(NLOptions opts)
-  : value(opts & NL_ABIProviding ? ProvidesABI : ProvidesAPI)
+  : value(opts.contains(NLFlags::ABIProviding) ? ProvidesABI : ProvidesAPI)
 { }
 
 VarDecl *PatternBindingDecl::
@@ -6847,7 +6841,7 @@ NominalTypeDecl::getExecutorOwnedEnqueueFunction() const {
   llvm::SmallVector<ValueDecl *, 2> results;
   lookupQualified(getSelfNominalTypeDecl(),
                   DeclNameRef(C.Id_enqueue),
-                  getLoc(), NL_ProtocolMembers,
+                  getLoc(), NLFlags::ProtocolMembers,
                   results);
 
   for (auto candidate: results) {
@@ -6886,7 +6880,7 @@ NominalTypeDecl::getExecutorLegacyOwnedEnqueueFunction() const {
   llvm::SmallVector<ValueDecl *, 2> results;
   lookupQualified(getSelfNominalTypeDecl(),
                   DeclNameRef(C.Id_enqueue),
-                  getLoc(), NL_ProtocolMembers,
+                  getLoc(), NLFlags::ProtocolMembers,
                   results);
 
   for (auto candidate: results) {
@@ -6925,7 +6919,7 @@ NominalTypeDecl::getExecutorLegacyUnownedEnqueueFunction() const {
   llvm::SmallVector<ValueDecl *, 2> results;
   lookupQualified(getSelfNominalTypeDecl(),
                   DeclNameRef(C.Id_enqueue),
-                  getLoc(), NL_ProtocolMembers,
+                  getLoc(), NLFlags::ProtocolMembers,
                   results);
 
   for (auto candidate: results) {
@@ -12470,7 +12464,7 @@ const VarDecl *ClassDecl::getUnownedExecutorProperty() const {
   llvm::SmallVector<ValueDecl *, 2> results;
   this->lookupQualified(getSelfNominalTypeDecl(),
                         DeclNameRef(C.Id_unownedExecutor),
-                        getLoc(), NL_ProtocolMembers,
+                        getLoc(), NLFlags::ProtocolMembers,
                         results);
 
   for (auto candidate: results) {
@@ -12606,12 +12600,22 @@ ActorIsolation swift::getActorIsolation(ValueDecl *value) {
   return getInferredActorIsolation(value).isolation;
 }
 
+ActorIsolation swift::getActorIsolation(ExtensionDecl *ext) {
+  return getInferredActorIsolation(ext).isolation;
+}
+
 InferredActorIsolation
 swift::getInferredActorIsolation(ValueDecl *value) {
   auto &ctx = value->getASTContext();
   return evaluateOrDefault(
       ctx.evaluator, ActorIsolationRequest{value},
       InferredActorIsolation::forUnspecified());
+}
+
+InferredActorIsolation swift::getInferredActorIsolation(ExtensionDecl *ext) {
+  auto &ctx = ext->getASTContext();
+  return evaluateOrDefault(ctx.evaluator, ActorIsolationRequest{ext},
+                           InferredActorIsolation::forUnspecified());
 }
 
 ActorIsolation swift::getActorIsolationOfContext(
