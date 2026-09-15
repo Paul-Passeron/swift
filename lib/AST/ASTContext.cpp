@@ -1611,6 +1611,24 @@ MacroDecl *ASTContext::getBuiltinDerivedConformanceMacroDecl(
                       {stringParam("", "infos")},
                       MacroIntroducedDeclName::getArbitrary());
     break;
+  case BuiltinDerivedConformanceMacroKind::DeriveRawRepresentable:
+    macro = makeMacro("_deriveRawRepresentable", "DeriveRawRepresentableMacro",
+                      {stringParam("", "infos"), stringParam("", "witness"),
+                       boolParam("", "isStrictMemorySafety")},
+                      MacroIntroducedDeclName::getArbitrary());
+    break;
+  case BuiltinDerivedConformanceMacroKind::DeriveCodingKey:
+    macro = makeMacro("_deriveCodingKey", "DeriveCodingKeyMacro",
+                      {stringParam("", "infos"), stringParam("", "witness"),
+                       stringParam("", "rawType"), boolParam("", "usingRaw")},
+                      MacroIntroducedDeclName::getArbitrary());
+    break;
+  case BuiltinDerivedConformanceMacroKind::AdditiveArithmetic:
+    macro =
+        makeMacro("_deriveAdditiveArithmetic", "DeriveAdditiveArithmeticMacro",
+                  {stringParam("", "infos"), stringParam("", "req")},
+                  MacroIntroducedDeclName::getArbitrary());
+    break;
   case BuiltinDerivedConformanceMacroKind::NumKinds:
     llvm_unreachable("not a real kind");
   }

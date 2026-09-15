@@ -19,8 +19,17 @@ add_swift_macro_library(SwiftMacros
   SwiftifyImportMacro.swift
   TypeInfoParser.swift
   DerivedConformances/DeriveCaseIterable.swift
+  DerivedConformances/DeriveCodable.swift
+  DerivedConformances/DeriveRawRepresentable.swift
   DerivedConformances/DeriveEquatable.swift
   DerivedConformances/DeriveHashable.swift
+  DerivedConformances/DeriveError.swift
+  DerivedConformances/DeriveComparable.swift
+  DerivedConformances/DeriveCodingKey.swift
+  DerivedConformances/DeriveAdditiveArithmetic.swift
+  DerivedConformances/DeriveCodingKey.swift
+  DerivedConformances/DeriveComparable.swift
+  DerivedConformances/DeriveAdditiveArithmetic.swift
   SWIFT_DEPENDENCIES
     SwiftDiagnostics
     SwiftSyntax
